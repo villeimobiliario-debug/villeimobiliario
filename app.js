@@ -98,7 +98,7 @@ function setMode(mode){
   hide("password",!passwordRequired);hide("password-label",!passwordRequired);
   $("password").required=passwordRequired;
   $("password").autocomplete=mode==="login"?"current-password":"new-password";
-  hide("email",mode==="password"); hide($("email").previousElementSibling.id || "auth-description",false); // handled below
+  hide("email",mode==="password");
   const label=$('email').previousElementSibling;
   label.style.display=mode==="password"?"none":"";
   $("email").required=mode!=="password";

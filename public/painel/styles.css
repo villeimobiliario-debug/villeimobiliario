@@ -437,3 +437,40 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .stat .stat-icon{display:grid;min-height:43px}
 .stat .stat-indicator{display:block;min-height:0;height:7px;line-height:0}
 @media(max-width:610px){.stat .stat-icon{min-height:36px}}
+
+
+/* Frente 3 — personalização e galeria da vitrine imobiliária */
+.site-intro{display:flex;align-items:center;justify-content:space-between;position:relative;gap:30px;overflow:hidden;
+ background:linear-gradient(115deg,#0b2567,#12419d 75%,#225bc0);border-radius:19px;
+ padding:30px 36px;margin-bottom:18px;box-shadow:0 15px 35px #092d811f}
+.site-intro:after{content:"";position:absolute;right:-90px;top:-145px;width:370px;height:370px;border:1px solid #ffffff20;border-radius:50%;box-shadow:0 0 0 55px #ffffff08}
+.site-intro>div{position:relative;z-index:1;max-width:700px}
+.site-intro .eyebrow{color:#bfd2ff}
+.site-intro h2{font-size:clamp(23px,2.5vw,32px);color:white;letter-spacing:-1.1px;line-height:1.2;margin:10px 0}
+.site-intro p{font-size:13px;line-height:1.7;color:#d5e3ff;max-width:570px;margin:0 0 19px}
+.site-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.site-buttons a{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px}
+.site-buttons .primary{background:white;color:#16419a}
+.site-buttons .secondary{background:transparent;border-color:#ffffff61;color:white}
+.site-status{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 19px}
+.site-status .status{border:1px solid #dce7f5}
+.site-columns{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);align-items:start;gap:18px}
+.site-editor .form-grid{margin:19px 0 22px}
+.site-editor .field input[type=color]{height:46px;padding:6px;cursor:pointer}
+.site-editor .primary{width:100%}
+.site-media{display:flex;align-items:center;gap:11px;padding:16px 0;border-bottom:1px solid var(--line)}
+.site-media:last-child{border-bottom:0}
+.site-media-preview{display:grid;place-items:center;flex:0 0 70px;width:70px;height:56px;overflow:hidden;border-radius:11px;background:#eef3fc;color:#5d80c9;font-size:27px;border:1px solid #e3ebf7}
+.site-media-preview img{width:100%;height:100%;object-fit:contain}
+.site-media-label{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.site-media-label strong{color:#293c5b;font-size:12px}
+.site-media-label small{font-size:10px;color:#8998ac}
+.site-media .secondary{min-height:36px;padding:8px 12px;font-size:11px}
+.site-columns .panel .primary{margin-top:6px}
+.property-photo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0 20px}
+.property-photo{display:flex;flex-direction:column;gap:6px;background:#f6f8fc;border:1px solid #e5ebf4;border-radius:10px;padding:7px;min-width:0}
+.property-photo img{height:110px;width:100%;object-fit:cover;border-radius:7px}
+.property-photo .tiny{width:100%}
+.dialog>.primary{width:100%;margin-top:8px}
+@media(max-width:1020px){.site-columns{grid-template-columns:1fr}}
+@media(max-width:600px){.site-intro{padding:24px 21px}.site-intro h2{font-size:24px}.site-buttons{flex-direction:column}.site-buttons a{width:100%}.site-media{flex-wrap:wrap}.property-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

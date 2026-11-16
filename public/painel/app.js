@@ -1,10 +1,10 @@
 import {config} from '../config.js';
 const root=document.querySelector('#app');
 const tokenKey='ville_agency_session_v1';
-const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[],rental_contracts:[],rent_charges:[],owner_payouts:[],finance_entries:[],property_events:[],documents:[],staff:[]},feedback:''};
+const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[],rental_contracts:[],rent_charges:[],owner_payouts:[],finance_entries:[],property_events:[],documents:[],property_sales:[],staff:[]},feedback:''};
 const navigation=[
  ['dashboard','Visão geral'],['properties','Imóveis'],['contacts','Clientes e proprietários'],
- ['leads','CRM de interessados'],['visits','Agenda de visitas'],['rentals','Locações e contratos'],
+ ['leads','CRM de interessados'],['visits','Agenda de visitas'],['sales','Vendas e comissões'],['rentals','Locações e contratos'],
  ['finance','Financeiro e repasses'],['agents','Corretores'],['documents','Documentos'],
  ['reports','Relatórios'],['settings','Configurações']
 ];
@@ -173,7 +173,7 @@ function showAccessDenied(text){
  const b=el('button','secondary','Sair');b.addEventListener('click',logout);card.append(b);box.append(card);root.append(box);
 }
 async function reloadData(){
- const tables=['properties','contacts','leads','visits','rental_contracts','rent_charges','owner_payouts','finance_entries','property_events','documents'];
+ const tables=['properties','contacts','leads','visits','rental_contracts','rent_charges','owner_payouts','finance_entries','property_events','documents','property_sales'];
  const entries=await Promise.all(tables.map(n=>list(n,'*','order=created_at.desc&limit=500')));
  tables.forEach((n,i)=>{appState.data[n]=entries[i];});
  if(['owner','manager'].includes(appState.member.role)){
@@ -575,6 +575,54 @@ function financialEntryDialog(){
    description:v.description.trim(),amount_cents:toCents(v.amount),occurred_on:v.occurred_on});
  },'Lançamentos manuais não devem duplicar os aluguéis registrados no módulo de locações.');
 }
+
+function saleDialog(){
+ const available=appState.data.properties.filter(x=>x.status!=='sold');
+ if(!available.length||!appState.data.contacts.length){
+  appState.feedback='Cadastre ao menos um imóvel disponível e um comprador antes de registrar a venda.';
+  appState.section=available.length?'contacts':'properties';renderSection();return;
+ }
+ dialogForm('Registrar venda concluída',[
+  {key:'property_id',label:'Imóvel vendido',kind:'select',wide:true,required:true,
+    options:[['','Selecione'],...available.map(p=>[p.id,p.title])]},
+  {key:'buyer_contact_id',label:'Comprador',kind:'select',wide:true,required:true,options:contactOptions()},
+  {key:'agent_user_id',label:'Corretor responsável (opcional)',kind:'select',wide:true,
+   options:[['','Não informado'],...appState.data.staff.map(a=>[a.user_id,a.email])]},
+  {key:'sold_on',label:'Data da venda',kind:'date',required:true,value:localDate()},
+  {key:'sale_price',label:'Valor da venda (R$)',required:true,placeholder:'250000,00'},
+  {key:'commission_percent',label:'Comissão (%)',kind:'number',required:true,value:'5'},
+  {key:'notes',label:'Observações',kind:'textarea',wide:true}
+ ],'Registrar venda',async v=>{
+  const percent=Number(v.commission_percent);
+  if(!Number.isFinite(percent)||percent<0||percent>100)throw Error('Comissão deve estar entre 0% e 100%.');
+  await mutate('property_sales',{property_id:v.property_id,buyer_contact_id:v.buyer_contact_id,
+    agent_user_id:v.agent_user_id||null,sold_on:v.sold_on,
+    sale_price_cents:toCents(v.sale_price),commission_percent:percent,
+    notes:v.notes||null});
+ },'Ao salvar, a venda será registrada e o imóvel passará para Vendido. A comissão é calculada, não paga automaticamente.');
+}
+function salesScreen(){
+ const manager=['owner','manager'].includes(appState.member.role),content=el('div');
+ content.append(sectionHeading('Vendas e comissões','Histórico de vendas concluídas e valores de comissão.',manager?saleDialog:null));
+ if(appState.feedback){content.append(el('div','notice',appState.feedback));appState.feedback='';}
+ const sales=appState.data.property_sales;
+ const volume=sales.reduce((s,x)=>s+Number(x.sale_price_cents),0);
+ const commission=sales.reduce((s,x)=>s+Number(x.commission_cents),0);
+ const stats=el('div','grid4');
+ for(const [title,value] of [['Vendas registradas',sales.length],['Volume total vendido',money(volume)],['Comissões calculadas',money(commission)]]){
+  const card=el('div','stat');card.append(el('span','',title),el('strong','',value));stats.append(card);
+ }
+ content.append(stats);
+ const p=panel('Histórico de vendas','A venda registrada atualiza automaticamente a situação do imóvel.');p.style.marginTop='17px';
+ p.append(rowsTable(['Imóvel','Comprador','Corretor','Valor','Comissão','Data'],sales,s=>[
+  propertyName(s.property_id),contactName(s.buyer_contact_id),
+  appState.data.staff.find(a=>a.user_id===s.agent_user_id)?.email||'Não informado',
+  money(s.sale_price_cents),money(s.commission_cents),day(s.sold_on)]));
+ content.append(p);
+ content.append(el('p','tip','O volume de vendas não equivale à receita da imobiliária. Comissões são valores calculados, sem comprovação de recebimento.'));
+ return content;
+}
+
 function financeScreen(){
  const canEdit=['owner','manager'].includes(appState.member.role);
  const content=el('div');content.append(sectionHeading('Financeiro e repasses','Acompanhe recebimentos, lançamentos e valores dos proprietários.',canEdit?financialEntryDialog:null));
@@ -703,7 +751,7 @@ function reportsScreen(){
  const cards=el('div','grid4');
  const numbers=[
   ['Imóveis disponíveis',properties.filter(x=>x.status==='available').length],
-  ['Vendas registradas',properties.filter(x=>x.status==='sold').length],
+  ['Vendas registradas',appState.data.property_sales.length],
   ['Locações registradas',properties.filter(x=>x.status==='rented').length],
   ['Visitas realizadas',visits.filter(x=>x.status==='completed').length]
  ];
@@ -716,6 +764,19 @@ function reportsScreen(){
   line.append(el('span','',title),el('strong','',leads.filter(l=>l.stage===k).length));p.append(line);
  }
  content.append(p);
+ if(manager){
+  const performance=panel('Atividade da equipe','Contagem de registros por criador; vendas vinculadas ao corretor.');
+  performance.style.marginTop='17px';
+  performance.append(rowsTable(['Profissional','CRM registrados','Visitas cadastradas','Vendas atribuídas','Comissões calculadas'],
+   appState.data.staff,member=>{
+    const sales=appState.data.property_sales.filter(x=>x.agent_user_id===member.user_id);
+    return [member.email,
+     appState.data.leads.filter(x=>x.created_by===member.user_id).length,
+     appState.data.visits.filter(x=>x.created_by===member.user_id).length,
+     sales.length,money(sales.reduce((sum,x)=>sum+Number(x.commission_cents),0))];
+   }));
+  content.append(performance);
+ }
  if(manager){
   const totalIncome=appState.data.finance_entries.filter(x=>x.direction==='income').reduce((s,x)=>s+Number(x.amount_cents),0)
    +appState.data.rent_charges.filter(x=>x.status==='paid').reduce((s,x)=>s+Number(x.amount_cents),0);
@@ -746,6 +807,7 @@ function renderSection(){
  const area=root.querySelector('#content');
  area.replaceChildren(appState.section==='dashboard'?dashboard():
   ['properties','contacts','leads','visits'].includes(appState.section)?listScreen(appState.section):
+  appState.section==='sales'?salesScreen():
   appState.section==='rentals'?rentalScreen():
   appState.section==='finance'?financeScreen():
   appState.section==='agents'?agentsScreen():

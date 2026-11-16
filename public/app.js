@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { asDate, asMoney, daysLate, calculateMetrics, subscriptionLabel, paymentLabel, safeText } from './logic.js';
 import { restoreFromCallback, getSession, isRecoverySession, login, signupInitial, requestPasswordReset,
-  currentUser, table, logout, updatePassword, clearSession } from './auth.js';
+  currentUser, table, adminRpc, logout, updatePassword, clearSession } from './auth.js';
 
 const app = document.querySelector('#app');
 const adminState = { user:null, section:'dashboard', tenants:[], subscriptions:[], invoices:[], payments:[], plans:[], events:[], settings:[] };
@@ -107,7 +107,172 @@ function dashboard() {
   for(const [l,v] of [['Em aberto',asMoney(metrics.outstanding)],['Contas em atraso',String(metrics.overdue)],['Pagamentos em análise',String(adminState.payments.filter(x=>x.state==='submitted').length)]]){const r=el('div','summary-row');r.append(el('span','',l));r.append(el('strong','',v));info.append(r);}side.append(info);
   two.append(recent,side);wrap.append(two);return wrap;
 }
-function tenants(){const root=el('div');root.append(header('Imobiliárias','Acompanhe os clientes que utilizam a plataforma.',true));const p=panel('Imobiliárias cadastradas','Contas e status dos clientes');p.append(tableRender(['Nome','Identificador','Situação','Cadastro'],adminState.tenants,r=>[r.name,r.slug,{badge:r.state==='enabled'?'Ativa':'Desativada',kind:r.state==='enabled'?'positive':'neutral'},asDate(r.created_at)]));root.append(p);const note=el('p','hint-note','O cadastro automático das imobiliárias será implementado na etapa do site institucional.');root.append(note);return root;}
+
+const tenantsUI = {search:'',filter:'all'};
+function normalizeSlug(value) {
+  return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80);
+}
+function parsePlanCents(value) {
+  const normalized=String(value||'').trim();
+  if(!/^\d+([,.]\d{1,2})?$/.test(normalized)) throw Error('Informe o valor como 197,00.');
+  const parts=normalized.replace(',','.').split('.');
+  const amount=Number(parts[0])*100+Number((parts[1]||'').padEnd(2,'0'));
+  if(!Number.isSafeInteger(amount)||amount<0||amount>100000000)throw Error('Valor inválido.');
+  return amount;
+}
+function modal(title, fields, submitLabel, onSubmit, help) {
+  const overlay=el('div','ville-modal-layer');
+  overlay.innerHTML=`<div class="ville-modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
+  <div class="ville-modal-head"><div><span class="eyebrow">ADMINISTRADOR • VILLE</span><h2 id="modal-heading"></h2></div><button type="button" class="modal-x" aria-label="Fechar janela">×</button></div>
+  <p class="ville-modal-help"></p><form class="ville-form" novalidate><div class="ville-form-grid"></div>
+  <p class="ville-form-error" role="alert" hidden></p>
+  <div class="ville-modal-actions"><button class="outline-button" type="button" data-cancel>Cancelar</button>
+  <button type="submit" class="ville-save"></button></div></form></div>`;
+  overlay.querySelector('#modal-heading').textContent=title;
+  overlay.querySelector('.ville-modal-help').textContent=help||'';
+  overlay.querySelector('.ville-save').textContent=submitLabel;
+  const grid=overlay.querySelector('.ville-form-grid');
+  for(const field of fields){
+    const wrapper=el('label','ville-field');
+    if(field.wide)wrapper.classList.add('wide');
+    const span=el('span','',field.label);
+    const input=document.createElement(field.type==='select'?'select':'input');
+    input.id='field-'+field.name;
+    input.name=field.name;
+    if(field.type!=='select')input.type=field.type||'text';
+    if(field.maxlength) input.maxLength=field.maxlength;
+    input.required=field.required!==false;
+    if(field.placeholder) input.placeholder=field.placeholder;
+    if(field.disabled)input.disabled=true;
+    if(field.pattern)input.pattern=field.pattern;
+    if(field.value!==undefined)input.value=field.value??'';
+    if(field.type==='select')for(const entry of(field.options||[])){
+      const opt=document.createElement('option');opt.value=entry.value;opt.textContent=entry.label;input.append(opt);
+    }
+    wrapper.append(span,input);grid.append(wrapper);
+  }
+  document.body.append(overlay);
+  const close=()=>{overlay.remove();document.body.classList.remove('modal-open');};
+  document.body.classList.add('modal-open');
+  overlay.querySelector('.modal-x').addEventListener('click',close);
+  overlay.querySelector('[data-cancel]').addEventListener('click',close);
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)close();});
+  overlay.querySelector('form').addEventListener('submit',async ev=>{
+    ev.preventDefault();
+    const form=ev.currentTarget;
+    if(!form.reportValidity())return;
+    const values=Object.fromEntries(new FormData(form).entries());
+    const save=overlay.querySelector('.ville-save'),error=overlay.querySelector('.ville-form-error');
+    save.disabled=true;error.hidden=true;
+    try{await onSubmit(values);close();await reload();adminState.section='tenants';renderSection();}
+    catch(err){
+      const raw=String(err?.message||'Não foi possível salvar.');
+      error.textContent=err?.code==='23505'?'Já existe uma imobiliária com este identificador.':raw;
+      error.hidden=false;
+    }finally{save.disabled=false;}
+  });
+  grid.querySelector('input,select')?.focus();
+  return overlay;
+}
+function openPlanModal(){
+  modal('Novo plano de assinatura',[
+    {name:'name',label:'Nome do plano',required:true,wide:true,maxlength:80,placeholder:'Ex.: Profissional'},
+    {name:'price',label:'Mensalidade (R$)',required:true,wide:true,placeholder:'Ex.: 197,00',pattern:'[0-9]+([,.][0-9]{1,2})?'}
+  ],'Criar plano', async v=>{
+    await adminRpc('admin_create_plan',{p_name:v.name.trim(),p_price_cents:parsePlanCents(v.price)});
+  },'Defina o preço do plano antes de cadastrar uma imobiliária. Nenhuma cobrança é gerada aqui.');
+}
+function openTenantModal(tenant=null){
+  const editing=Boolean(tenant);
+  const plans=adminState.plans.filter(p=>p.active);
+  if(!editing && !plans.length){openPlanModal();return;}
+  const fields=[
+    {name:'name',label:'Nome da imobiliária',required:true,wide:true,maxlength:160,value:tenant?.name||'',placeholder:'Ex.: Costa Imóveis'},
+    {name:'slug',label:'Identificador da vitrine',required:true,wide:true,maxlength:80,
+     value:tenant?.slug||'',disabled:editing,pattern:'[a-z0-9]+(-[a-z0-9]+)*',placeholder:'costa-imoveis'},
+    {name:'contact_name',label:'Nome do responsável',required:true,wide:true,maxlength:120,value:tenant?.contact_name||''},
+    {name:'contact_email',label:'E-mail do responsável',type:'email',required:true,maxlength:254,value:tenant?.contact_email||''},
+    {name:'contact_phone',label:'WhatsApp (opcional)',type:'tel',required:false,maxlength:30,value:tenant?.contact_phone||''},
+    ...(!editing?[{name:'plan_id',label:'Plano de assinatura',type:'select',wide:true,
+      options:[{value:'',label:'Selecione um plano'},...plans.map(p=>({value:p.id,label:p.name+' — '+asMoney(p.monthly_price_cents)+'/mês'}))]}]:[])
+  ];
+  const overlay=modal(editing?'Editar imobiliária':'Cadastrar imobiliária',fields,editing?'Salvar alterações':'Cadastrar e iniciar teste', async v=>{
+    if(v.name.trim().length<2||v.contact_name.trim().length<2)throw Error('Preencha os nomes corretamente.');
+    const params={p_name:v.name.trim(),p_contact_name:v.contact_name.trim(),p_contact_email:v.contact_email.trim().toLowerCase(),p_contact_phone:v.contact_phone.trim()};
+    if(editing) await adminRpc('admin_update_tenant',{p_tenant_id:tenant.id,...params});
+    else {
+      if(!v.plan_id)throw Error('Selecione um plano.');
+      await adminRpc('admin_create_tenant',{...params,p_slug:v.slug,p_plan_id:v.plan_id});
+    }
+  },editing?'Atualize os dados de contato. O identificador da vitrine não é editável.':'O cadastro cria a imobiliária e inicia 7 dias de teste. O acesso do responsável será configurado em outra etapa.');
+  if(!editing){
+    const name=overlay.querySelector('[name="name"]');
+    const slug=overlay.querySelector('[name="slug"]');
+    let custom=false;slug.addEventListener('input',()=>{custom=true;});
+    name.addEventListener('input',()=>{if(!custom)slug.value=normalizeSlug(name.value);});
+  }
+}
+async function toggleTenant(tenant){
+  const disable=tenant.state==='enabled';
+  if(!window.confirm((disable?'Suspender':'Reativar')+' '+tenant.name+'? '+(disable?'O cadastro e a assinatura ficarão suspensos, sem apagar os dados.':'A assinatura será recalculada sem reiniciar o teste gratuito.')))return;
+  try{
+    await adminRpc('admin_set_tenant_state',{p_tenant_id:tenant.id,p_state:disable?'disabled':'enabled'});
+    await reload();
+    adminState.section='tenants';renderSection();
+  }catch(err)window.alert(formatError(err));
+}
+function tenants(){
+  const root=el('div');
+  const heading=header('Imobiliárias','Gerencie cadastros, responsáveis e períodos de teste.',true);
+  const actions=el('div','tenants-actions');
+  const plan=el('button','outline-button','+ Novo plano');
+  const add=el('button','ville-save','+ Cadastrar imobiliária');
+  plan.addEventListener('click',openPlanModal);
+  add.addEventListener('click',()=>openTenantModal());
+  actions.append(plan,add);root.append(heading,actions);
+  const filters=el('div','tenant-filters');
+  const input=el('input');input.type='search';input.placeholder='Pesquisar imobiliária, responsável ou contato';input.value=tenantsUI.search;
+  input.setAttribute('aria-label','Pesquisar imobiliárias');
+  const select=el('select');
+  select.setAttribute('aria-label','Filtrar situação');
+  for(const [value,label] of [['all','Todas as situações'],['enabled','Ativas'],['disabled','Suspensas']]){
+    const opt=el('option','',label);opt.value=value;select.append(opt);
+  }
+  select.value=tenantsUI.filter;
+  filters.append(input,select);root.append(filters);
+  const p=panel('Imobiliárias cadastradas','Empresas, contatos e situação das contas');
+  const rows=el('div');
+  p.append(rows);root.append(p);
+  function draw(){
+    const term=tenantsUI.search.trim().toLocaleLowerCase('pt-BR');
+    const list=adminState.tenants.filter(t=>
+      (tenantsUI.filter==='all'||t.state===tenantsUI.filter) &&
+      [t.name,t.slug,t.contact_name,t.contact_email,t.contact_phone].some(x=>String(x||'').toLocaleLowerCase('pt-BR').includes(term))
+    );
+    const table=tableRender(['Imobiliária','Responsável','E-mail','Situação','Cadastro','Ações'],
+      list,t=>[t.name,t.contact_name||'—',t.contact_email||'—',
+        {badge:t.state==='enabled'?'Ativa':'Suspensa',kind:t.state==='enabled'?'positive':'negative'},asDate(t.created_at),''],
+      'Nenhuma imobiliária encontrada.');
+    if(list.length){
+      table.querySelectorAll('tbody tr').forEach((tr,i)=>{
+        const cell=tr.lastElementChild;
+        const edit=el('button','tenant-action','Editar');
+        const toggle=el('button','tenant-action'+(list[i].state==='enabled'?' danger':''),list[i].state==='enabled'?'Suspender':'Reativar');
+        edit.addEventListener('click',()=>openTenantModal(list[i]));
+        toggle.addEventListener('click',()=>toggleTenant(list[i]));
+        cell.append(edit,toggle);
+      });
+    }
+    rows.replaceChildren(table);
+  }
+  input.addEventListener('input',()=>{tenantsUI.search=input.value;draw();});
+  select.addEventListener('change',()=>{tenantsUI.filter=select.value;draw();});
+  draw();
+  root.append(el('p','hint-note','O cadastro manual inicia 7 dias de teste, mas não cria o login do responsável. O cadastro automático será desenvolvido no site institucional.'));
+  return root;
+}
+
 function subscriptions(){const root=el('div');root.append(header('Assinaturas','Acompanhe testes gratuitos, mensalidades e atrasos.',true));const p=panel('Controle de assinaturas','Prazo de tolerância: 5 dias após o vencimento');p.append(tableRender(['Imobiliária','Situação','Fim do teste','Próximo vencimento','Dias em atraso'],adminState.subscriptions,r=>[adminState.tenants.find(t=>t.id===r.tenant_id)?.name||'—',{badge:subscriptionLabel(r.status),kind:r.status==='active'?'positive':r.status==='suspended'?'negative':'neutral'},asDate(r.trial_ends_at),asDate(r.next_due_on),daysLate(r.next_due_on)]));root.append(p);return root;}
 function payments(){const root=el('div');root.append(header('Pagamentos','Confira os comprovantes antes de confirmar qualquer recebimento.',true));const p=panel('Histórico de pagamentos','Somente pagamentos conferidos podem ser considerados recebidos');p.append(tableRender(['Imobiliária','Valor','Situação','Enviado em'],adminState.payments,r=>[adminState.tenants.find(t=>t.id===r.tenant_id)?.name||'—',asMoney(r.amount_cents),{badge:paymentLabel(r.state),kind:r.state==='approved'?'positive':r.state==='rejected'?'negative':'neutral'},asDate(r.submitted_at)]));root.append(p);root.append(el('p','hint-note','A conferência e aprovação manual de comprovantes será liberada no próximo módulo.'));return root;}
 function settings(){const root=el('div');root.append(header('Configurações','Regras comerciais e parâmetros da plataforma.'));const s=adminState.settings?.[0]||{};const p=panel('Parâmetros comerciais','Configurações atuais do SaaS');const list=el('div','settings-list');for(const [l,v] of [['Teste grátis',`${s.trial_days ?? 7} dias`],['Tolerância após vencimento',`${s.grace_days ?? 5} dias`],['Chave Pix',s.pix_key ? 'Configurada':'Ainda não configurada']]){const item=el('div','setting-row');item.append(el('span','',l));item.append(el('strong','',v));list.append(item);}p.append(list);root.append(p);root.append(el('p','hint-note','Para proteger dados comerciais, as alterações de parâmetros serão disponibilizadas em módulo administrativo específico, com histórico de auditoria.'));return root;}
@@ -115,7 +280,7 @@ function renderSection(){document.querySelectorAll('[data-nav]').forEach(n=>n.cl
 async function reload(){try{await loadData();renderSection();}catch(e){showFatal(e);}}
 async function loadData() {
   const [tenants,subscriptions,invoices,payments,plans,settings] = await Promise.all([
-    table('tenants','select=id,name,slug,state,created_at&order=created_at.desc&limit=1000'),
+    table('tenants','select=id,name,slug,state,created_at,contact_name,contact_email,contact_phone&order=created_at.desc&limit=1000'),
     table('subscriptions','select=tenant_id,status,trial_ends_at,next_due_on&limit=1000'),
     table('invoices','select=id,tenant_id,due_on,amount_cents,status&limit=1000'),
     table('payments','select=id,tenant_id,amount_cents,state,submitted_at&order=submitted_at.desc&limit=1000'),

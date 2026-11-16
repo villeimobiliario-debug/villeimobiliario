@@ -7,3 +7,33 @@
 @media(max-width:1150px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two-column{grid-template-columns:1fr}.auth-page{grid-template-columns:40% 60%}.auth-aside{padding:40px}.aside-copy h1{font-size:40px}}
 @media(max-width:780px){.auth-page{display:block}.auth-aside{display:none}.auth-main{padding:28px 23px 24px}.auth-top{justify-content:center}.auth-card{margin:auto;max-width:460px;padding:55px 0}.auth-card h2{font-size:29px}.sidebar{position:fixed;left:0;transform:translateX(-105%);transition:transform .2s;box-shadow:10px 0 40px #10274a13}.sidebar-open .sidebar{transform:translateX(0)}.sidebar-open .sidebar-scrim{display:block;position:fixed;inset:0;background:#0a1b4266;z-index:8}.menu-toggle{display:block}.topbar{height:70px;padding:0 20px}.breadcrumbs{font-size:11px}.top-user div{display:none}.page-content{padding:27px 19px 50px}.page-header{align-items:flex-start}.page-header h1{font-size:26px}.page-header p{font-size:12px}.outline-button{padding:9px 10px}.metric-card{min-height:145px;padding:16px}.metric-value{font-size:23px}.metric-top{font-size:11px}.info-line{font-size:11px}}
 @media(max-width:440px){.page-header{display:block}.outline-button{margin-top:18px}.metric-grid{gap:10px}.metric-card{padding:14px 12px}.metric-value{font-size:20px}.metric-icon{width:28px;height:28px}.panel{padding:18px 12px}.auth-card h2{font-size:27px}}
+
+
+/* Gestao de imobiliarias - mesmo design system do painel administrativo */
+.tenants-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:-10px 0 22px}
+.tenants-actions .ville-save{width:auto;margin:0}
+.tenant-filters{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.tenant-filters input,.tenant-filters select{border:1px solid var(--line);background:white;border-radius:11px;padding:13px 15px;color:#233356;font:inherit;font-size:13px}
+.tenant-filters input{min-width:230px;flex:1}
+.tenant-filters select{min-width:195px}
+.tenant-action{padding:8px 11px;margin:2px;border:1px solid #e1e7f2;background:white;color:var(--blue);font-weight:750;font-size:11px;border-radius:8px;white-space:nowrap}
+.tenant-action.danger{color:#d34257;border-color:#ffd6db}
+.tenant-action:hover{background:#f2f5fb}
+.ville-modal-layer{position:fixed;inset:0;background:#0a183c90;backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;overflow:auto;padding:18px;z-index:60}
+body.modal-open{overflow:hidden}
+.ville-modal{background:#fff;border:1px solid #e7ebf3;max-height:calc(100vh - 36px);overflow:auto;max-width:620px;width:100%;padding:28px;border-radius:20px;box-shadow:0 24px 80px #001f4d35}
+.ville-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.ville-modal-head h2{font-size:25px;color:#21334e;margin:9px 0}
+.ville-modal-help{font-size:12px;line-height:1.65;color:#7a88a0;margin:0 0 20px}
+.ville-modal-head .eyebrow{font-size:10px;color:var(--blue);font-weight:850;letter-spacing:.1em}
+.modal-x{width:36px;height:36px;border:0;border-radius:10px;background:#f4f6fb;color:#42536f;font-size:25px}
+.ville-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.ville-field{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#3e4a63;font-weight:700;min-width:0}
+.ville-field.wide{grid-column:span 2}
+.ville-field input,.ville-field select{height:45px;border:1px solid #dce4ef;border-radius:10px;padding:0 12px;background:white;color:#23324a;width:100%;font-weight:500}
+.ville-form-error{margin:15px 0 0;background:#fff1f2;color:#b8354e;border:1px solid #ffd4da;border-radius:10px;padding:12px;font-size:12px;line-height:1.5}
+.ville-modal-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:22px}
+.ville-save{background:var(--blue);border:0;color:#fff;padding:12px 17px;border-radius:10px;font-size:13px;font-weight:800}
+.ville-save:hover{background:var(--blue-dark)}
+.ville-save:disabled{opacity:.6}
+@media(max-width:660px){.ville-form-grid{grid-template-columns:1fr}.ville-field.wide{grid-column:span 1}.ville-modal{padding:18px}.tenant-filters select{flex:1}.tenants-actions{justify-content:stretch}.tenants-actions button{flex:1}}

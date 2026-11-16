@@ -739,6 +739,35 @@ function renderSection(){
   appState.section==='reports'?reportsScreen():
   appState.section==='settings'?settingsScreen():future(appState.section));
 }
+
+function passwordResetScreen(){
+ root.innerHTML=`<div class="login-wrap"><aside class="login-side"><div class="logo">VILLE<i>.</i><small>IMOBILIÁRIO</small></div>
+ <div><h1>Seu acesso.<br>Sua segurança.</h1><p>Defina uma nova senha para continuar usando a gestão da imobiliária.</p></div>
+ <small>Área de acesso protegida</small></aside><main class="login-main"><section class="login-card">
+ <span class="eyebrow">VILLE • RECUPERAÇÃO</span><h2>Definir nova senha</h2>
+ <p class="subtext">Escolha uma nova senha com pelo menos 12 caracteres.</p>
+ <div id="reset-feedback"></div><form id="reset-password-form" class="form-grid">
+ <label class="field wide">Nova senha<input name="password" type="password" minlength="12" autocomplete="new-password" required></label>
+ <label class="field wide">Confirmar senha<input name="confirm" type="password" minlength="12" autocomplete="new-password" required></label>
+ <div class="wide" style="grid-column:1/-1"><button class="primary" type="submit">Salvar nova senha</button></div>
+ </form></section></main></div>`;
+ const form=root.querySelector('#reset-password-form');
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;
+  const data=new FormData(form),password=esc(data.get('password'));
+  const feedback=root.querySelector('#reset-feedback');feedback.replaceChildren();
+  try{
+   if(password.length<12)throw Error('Use pelo menos 12 caracteres.');
+   if(password!==esc(data.get('confirm')))throw Error('As duas senhas precisam ser iguais.');
+   await request('/auth/v1/user',{method:'PUT',data:{password}});
+   saveSession({...appState.session,recovery:false});
+   await bootstrap();
+  }catch(err){feedback.replaceChildren(el('div','notice error',err.message));}
+  finally{btn.disabled=false;}
+ });
+}
+
 function recoverSessionFromUrl(){
  const params=new URLSearchParams(location.hash.slice(1));
  if(!params.has('access_token')||!params.has('refresh_token'))return false;
@@ -749,5 +778,5 @@ function recoverSessionFromUrl(){
 }
 const recovered=recoverSessionFromUrl();
 if(recovered&&appState.session?.recovery){
- loginScreen('login','Seu link foi recebido. Por segurança, abra o formulário de recuperação no painel administrativo para definir uma nova senha.');
+ passwordResetScreen();
 }else if(appState.session?.access_token){bootstrap();}else{loginScreen();}

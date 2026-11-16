@@ -1,27 +1,79 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex, nofollow" />
-  <title>VILLE Imobiliário | Teste de publicação</title>
-  <style>
-    :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif; }
-    * { box-sizing: border-box; }
-    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #0a1020; color: #f8fafc; padding: 24px; }
-    main { max-width: 600px; width: 100%; padding: 48px 36px; background: #111b31; border: 1px solid #253452; border-radius: 24px; text-align: center; }
-    .brand { font-size: 18px; letter-spacing: .24em; font-weight: 800; color: #82aaff; }
-    h1 { font-size: clamp(30px, 5vw, 42px); margin: 20px 0 16px; }
-    p { color: #b9c5d9; line-height: 1.6; }
-    .tag { display: inline-block; margin-top: 24px; padding: 10px 18px; border-radius: 999px; background: #143d31; color: #a6f2cf; font-size: 14px; }
-  </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#0E359D"/>
+  <meta name="robots" content="noindex,nofollow"/>
+  <title>VILLE Imobiliário | Administração</title>
+  <link rel="stylesheet" href="/styles.css"/>
+  <script defer src="/app.js"></script>
 </head>
 <body>
-  <main>
-    <div class="brand">VILLE</div>
-    <h1>VILLE Imobiliário</h1>
-    <p>Ambiente de testes. Esta página foi criada para verificar a integração entre GitHub e Cloudflare.</p>
-    <span class="tag">Teste inicial de publicação</span>
-  </main>
+ <div id="auth-screen" class="auth-layout">
+  <div class="brand-section">
+   <div class="brand-mark">V<span class="brand-dot">.</span></div>
+   <p class="eyebrow light">VILLE IMOBILIÁRIO</p>
+   <h1>Gestão inteligente.<br/>Controle de verdade.</h1>
+   <p>O centro de comando da sua plataforma imobiliária, com segurança e visão do negócio.</p>
+   <div class="brand-foot">Ambiente administrativo privado</div>
+  </div>
+  <section class="login-area">
+   <div class="auth-card">
+    <div class="auth-icon">V<span>.</span></div>
+    <p class="eyebrow">ACESSO RESTRITO</p>
+    <h2 id="auth-title">Acesse sua conta</h2>
+    <p id="auth-description" class="muted">Entre para acompanhar sua plataforma VILLE.</p>
+    <form id="auth-form" autocomplete="on">
+      <label for="email">E-mail</label>
+      <input id="email" type="email" placeholder="seu@email.com" autocomplete="username" required maxlength="254"/>
+      <label for="password" id="password-label">Senha</label>
+      <input id="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" minlength="8" required/>
+      <button type="submit" class="btn primary full" id="auth-submit">Entrar na plataforma</button>
+    </form>
+    <div class="auth-links"><button type="button" class="text-btn" id="forgot-btn">Esqueci minha senha</button><button type="button" class="text-btn" id="setup-btn">Primeiro acesso</button></div>
+    <p class="notice hidden" id="auth-notice" role="status" aria-live="polite"></p>
+    <p class="privacy-note">Apenas administradores autorizados podem acessar esta área.</p>
+   </div>
+  </section>
+ </div>
+ <div id="app-screen" class="app-layout hidden">
+   <aside class="sidebar">
+      <div class="sidebar-brand"><div class="mini-mark">V<span>.</span></div><div><strong>VILLE</strong><small>IMOBILIÁRIO</small></div></div>
+      <p class="sidebar-label">PRINCIPAL</p>
+      <nav aria-label="Menu principal" class="nav-list">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-symbol">◫</span>Visão geral</button>
+        <button class="nav-item" data-page="tenants"><span class="nav-symbol">▣</span>Imobiliárias</button>
+        <button class="nav-item" data-page="subscriptions"><span class="nav-symbol">▦</span>Assinaturas</button>
+        <button class="nav-item" data-page="payments"><span class="nav-symbol">▤</span>Pagamentos</button>
+      </nav>
+      <p class="sidebar-label">ADMINISTRAÇÃO</p>
+      <nav aria-label="Administração" class="nav-list">
+        <button class="nav-item" data-page="settings"><span class="nav-symbol">⚙</span>Configurações</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="sidebar-avatar">VA</div><div class="sidebar-account"><strong>Administrador</strong><small id="sidebar-email"></small></div><button id="signout-btn" title="Sair" aria-label="Sair da conta" class="logout">↪</button></div>
+   </aside>
+   <main class="main">
+     <header class="topbar"><div><span class="breadcrumb">VILLE / ADMINISTRAÇÃO</span><h1 id="page-title">Visão geral</h1></div><div class="header-actions"><span class="environment"><span class="status-dot"></span> Painel administrativo</span><button id="refresh-btn" class="btn subtle" type="button">↻ Atualizar</button></div></header>
+     <div class="content">
+      <p class="notice hidden" id="data-notice" role="status" aria-live="polite"></p>
+      <section class="page" id="page-dashboard">
+       <div class="welcome"><div><p class="eyebrow">GESTÃO DA PLATAFORMA</p><h2>Seu negócio em uma só visão.</h2><p>Indicadores atualizados diretamente do Supabase.</p></div><span class="welcome-accent">VILLE<span>.</span></span></div>
+       <div class="stats-grid">
+        <article class="stat"><div class="stat-top"><span>Imobiliárias cadastradas</span><span class="stat-icon blue">▣</span></div><strong id="stat-tenants">—</strong><small>Total de empresas na plataforma</small></article>
+        <article class="stat"><div class="stat-top"><span>Assinaturas ativas</span><span class="stat-icon green">✓</span></div><strong id="stat-active">—</strong><small>Planos com status ativo</small></article>
+        <article class="stat"><div class="stat-top"><span>Em teste grátis</span><span class="stat-icon orange">◷</span></div><strong id="stat-trial">—</strong><small>Contas com período de teste</small></article>
+        <article class="stat"><div class="stat-top"><span>Mensalidades em aberto</span><span class="stat-icon red">!</span></div><strong id="stat-open">—</strong><small>Faturas ainda não pagas</small></article>
+       </div>
+       <div class="two-panels"><article class="panel"><div class="panel-heading"><div><h3>Recebimentos confirmados</h3><p>Somatório das faturas pagas</p></div><span class="panel-icon">R$</span></div><strong class="financial-value" id="stat-received">—</strong><div class="panel-divider"></div><div class="panel-foot"><span>Receita recorrente prevista*</span><strong id="stat-mrr">—</strong></div><small>*Estimativa dos planos ativos, não representa dinheiro recebido.</small></article><article class="panel"><div class="panel-heading"><div><h3>Próximos vencimentos</h3><p>Assinaturas que exigem atenção</p></div><span class="panel-icon coral">◷</span></div><div id="due-list" class="due-list"><p class="muted">Carregando...</p></div></article></div>
+       <section class="panel"><div class="table-top"><div><h3>Imobiliárias recentes</h3><p>Últimos cadastros da plataforma</p></div><button class="btn subtle" data-go="tenants" type="button">Ver todas →</button></div><div class="table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>CADASTRO</th><th>STATUS</th></tr></thead><tbody id="recent-tenants"><tr><td colspan="3">Carregando...</td></tr></tbody></table></div></section>
+      </section>
+      <section class="page hidden" id="page-tenants"><div class="section-head"><div><h2>Imobiliárias</h2><p>Empresas cadastradas no VILLE Imobiliário.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>IDENTIFICADOR</th><th>CADASTRO</th><th>ESTADO</th></tr></thead><tbody id="all-tenants"></tbody></table></div></section>
+      <section class="page hidden" id="page-subscriptions"><div class="section-head"><div><h2>Assinaturas</h2><p>Períodos de teste, renovações e vencimentos.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>PLANO</th><th>SITUAÇÃO</th><th>VENCIMENTO</th></tr></thead><tbody id="all-subscriptions"></tbody></table></div></section>
+      <section class="page hidden" id="page-payments"><div class="section-head"><div><h2>Pagamentos</h2><p>Comprovantes e histórico de solicitações de pagamento.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>VALOR</th><th>STATUS</th><th>ENVIADO EM</th></tr></thead><tbody id="all-payments"></tbody></table></div></section>
+      <section class="page hidden" id="page-settings"><div class="section-head"><div><h2>Configurações</h2><p>Parâmetros gerais da plataforma.</p></div></div><div class="settings-grid"><article class="panel"><h3>Assinaturas</h3><div class="setting-row"><span>Período de teste gratuito</span><strong id="setting-trial">—</strong></div><div class="setting-row"><span>Tolerância após vencimento</span><strong id="setting-grace">—</strong></div><p class="tip">Alterações de regras serão disponibilizadas em uma etapa posterior, com trilha de auditoria.</p></article><article class="panel"><h3>Pagamento por Pix</h3><div class="setting-row"><span>Chave Pix configurada</span><strong id="setting-pix">—</strong></div><p class="tip">O envio de comprovantes e a confirmação manual serão implementados no próximo módulo.</p></article></div></section>
+     </div>
+   </main>
+ </div>
 </body>
 </html>

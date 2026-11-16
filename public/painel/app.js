@@ -1,11 +1,11 @@
 import {config} from '../config.js';
 const root=document.querySelector('#app');
 const tokenKey='ville_agency_session_v1';
-const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[],rental_contracts:[],rent_charges:[],owner_payouts:[],finance_entries:[],property_events:[],documents:[],property_sales:[],staff:[]},feedback:''};
+const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[],rental_contracts:[],rent_charges:[],owner_payouts:[],finance_entries:[],property_events:[],documents:[],property_sales:[],staff:[],website:null,property_images:[]},feedback:''};
 const navigation=[
  ['dashboard','Visão geral'],['properties','Imóveis'],['contacts','Clientes e proprietários'],
  ['leads','CRM de interessados'],['visits','Agenda de visitas'],['sales','Vendas e comissões'],['rentals','Locações e contratos'],
- ['finance','Financeiro e repasses'],['agents','Corretores'],['documents','Documentos'],
+ ['finance','Financeiro e repasses'],['agents','Corretores'],['documents','Documentos'],['website','Meu Site'],
  ['reports','Relatórios'],['settings','Configurações']
 ];
 const statuses={available:'Disponível',reserved:'Reservado',rented:'Alugado',sold:'Vendido',inactive:'Inativo',
@@ -211,9 +211,10 @@ function showAccessDenied(text){
  const b=el('button','secondary','Sair');b.addEventListener('click',logout);card.append(b);box.append(card);root.append(box);
 }
 async function reloadData(){
- const tables=['properties','contacts','leads','visits','rental_contracts','rent_charges','owner_payouts','finance_entries','property_events','documents','property_sales'];
+ const tables=['properties','contacts','leads','visits','rental_contracts','rent_charges','owner_payouts','finance_entries','property_events','documents','property_sales','property_images'];
  const entries=await Promise.all(tables.map(n=>list(n,'*','order=created_at.desc&limit=500')));
  tables.forEach((n,i)=>{appState.data[n]=entries[i];});
+ const websiteRows=await list('tenant_websites','*','limit=1');appState.data.website=websiteRows[0]||null;
  if(['owner','manager'].includes(appState.member.role)){
   appState.data.staff=await request('/rest/v1/rpc/agency_staff_list',{method:'POST',data:{p_tenant_id:appState.tenant.id}});
  }else appState.data.staff=[];
@@ -249,7 +250,7 @@ function renderShell(){
  root.querySelector('#top-plan').textContent=trial?'Período de teste':appState.subscription?.status==='active'?'Plano ativo':'Minha assinatura';
  root.querySelector('#side-status').textContent=trial?'Teste gratuito em andamento':'Ambiente protegido';
  const nav=root.querySelector('#nav');
- const groups={dashboard:'PAINEL',properties:'GESTÃO DE IMÓVEIS',contacts:'GESTÃO DE IMÓVEIS',leads:'GESTÃO DE IMÓVEIS',visits:'GESTÃO DE IMÓVEIS',sales:'NEGÓCIOS E FINANÇAS',rentals:'NEGÓCIOS E FINANÇAS',finance:'NEGÓCIOS E FINANÇAS',agents:'ADMINISTRAÇÃO',documents:'ADMINISTRAÇÃO',reports:'ADMINISTRAÇÃO',settings:'ADMINISTRAÇÃO'};
+ const groups={dashboard:'PAINEL',properties:'GESTÃO DE IMÓVEIS',contacts:'GESTÃO DE IMÓVEIS',leads:'GESTÃO DE IMÓVEIS',visits:'GESTÃO DE IMÓVEIS',sales:'NEGÓCIOS E FINANÇAS',rentals:'NEGÓCIOS E FINANÇAS',finance:'NEGÓCIOS E FINANÇAS',agents:'ADMINISTRAÇÃO',documents:'ADMINISTRAÇÃO',website:'ADMINISTRAÇÃO',reports:'ADMINISTRAÇÃO',settings:'ADMINISTRAÇÃO'};
  let last='';
  navigation.forEach(([key,label])=>{
   if(groups[key]!==last){if(last)nav.append(el('div','nav-group-label',groups[key]));last=groups[key];}
@@ -418,9 +419,9 @@ function listScreen(kind){
   const term=search.value.trim().toLocaleLowerCase('pt-BR');
   const data=appState.data[kind].filter(r=>Object.values(r).some(v=>typeof v==='string'&&v.toLocaleLowerCase('pt-BR').includes(term)));
   const action=r=>({actions:kind==='properties'?[['Editar',()=>openForm(kind,r)],['Histórico',()=>showHistory(r)]]:[['Editar',()=>openForm(kind,r)]]});
-  if(kind==='properties')holder.replaceChildren(rowsTable(['Imóvel','Tipo','Finalidade','Localização','Preço','Situação','Ações'],data,r=>[
+  if(kind==='properties')holder.replaceChildren(rowsTable(['Imóvel','Tipo','Finalidade','Localização','Preço','Situação','Site','Ações'],data,r=>[
    r.title,types[r.property_type],r.purpose==='both'?'Venda e aluguel':r.purpose==='rent'?'Aluguel':'Venda',r.city,
-   r.purpose==='rent'?money(r.rental_price_cents):money(r.sale_price_cents),{status:statuses[r.status],ok:r.status==='available'}, writable?action(r):'—']));
+   r.purpose==='rent'?money(r.rental_price_cents):money(r.sale_price_cents),{status:statuses[r.status],ok:r.status==='available'},{status:r.published?'Publicado':'Oculto',ok:r.published},writable?{actions:[['Editar',()=>openForm(kind,r)],['Fotos',()=>propertyGallery(r)],['Histórico',()=>showHistory(r)],[r.published?'Ocultar do site':'Publicar no site',()=>togglePropertyPublish(r)]]}:'—']));
   if(kind==='contacts')holder.replaceChildren(rowsTable(['Nome','Perfil','Contato','Cadastro','Ações'],data,r=>[
    r.full_name,({lead:'Interessado',buyer:'Comprador',tenant:'Locatário',owner:'Proprietário',other:'Outro'})[r.kind]||r.kind,
    r.phone||r.email||'—',day(r.created_at),action(r)]));
@@ -934,6 +935,166 @@ function reportsScreen(){
  }
  return content;
 }
+
+function websiteUrl(preview=false){
+ return location.origin+'/vitrine/?imobiliaria='+encodeURIComponent(appState.tenant.slug)+(preview?'&preview=1':'');
+}
+function mediaUrl(path){
+ const prefix=appState.tenant.id+'/';
+ if(!path||!String(path).startsWith(prefix))return '';
+ return config.supabaseUrl+'/storage/v1/object/public/ville-public-media/'+String(path).split('/').map(encodeURIComponent).join('/');
+}
+async function saveWebsite(patch){
+ const old=appState.data.website;
+ const data={...patch,updated_by:appState.user.id};
+ const res=await request('/rest/v1/tenant_websites'+(old?'?tenant_id=eq.'+encodeURIComponent(appState.tenant.id):''),{
+ method:old?'PATCH':'POST',prefer:'return=representation',
+ data:old?data:{tenant_id:appState.tenant.id,site_name:appState.tenant.name,...data}});
+ if(!Array.isArray(res)||res.length!==1)throw Error('Não foi possível confirmar a atualização do site.');
+ appState.data.website=res[0];
+}
+async function publishWebsite(published){
+ if(!window.confirm(published?'Despublicar o site da imobiliária?':'Publicar o site da imobiliária agora?'))return;
+ await asyncOperation(()=>saveWebsite({is_published:!published}),published?'Site despublicado.':'Site publicado com sucesso.');
+}
+async function togglePropertyPublish(p){
+ if(!p.published&&p.status!=='available'){appState.feedback='Apenas imóveis disponíveis podem ser publicados.';renderSection();return;}
+ await asyncOperation(()=>mutate('properties',{published:!p.published},p.id),p.published?'Imóvel retirado do site.':'Imóvel publicado no catálogo.');
+}
+async function selectImage(){
+ return new Promise(resolve=>{
+  const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';
+  input.style.position='fixed';input.style.opacity='0';input.style.pointerEvents='none';
+  document.body.append(input);
+  input.addEventListener('change',()=>{const file=input.files?.[0]||null;input.remove();resolve(file);},{once:true});
+  input.click();
+ });
+}
+async function uploadImage(file,path){
+ if(!file||file.size<1||file.size>7340032)throw Error('Imagem precisa ter entre 1 byte e 7 MB.');
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Formato inválido. Use JPG, PNG ou WEBP.');
+ const url=config.supabaseUrl+'/storage/v1/object/ville-public-media/'+path.split('/').map(encodeURIComponent).join('/');
+ const response=await fetch(url,{method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+appState.session.access_token,
+  'Content-Type':file.type,'x-upsert':'false'},body:file});
+ if(!response.ok){const err=await response.json().catch(()=>({}));throw Error(err.message||err.error||'Falha no upload.');}
+}
+async function updateBrandingImage(field){
+ const file=await selectImage();if(!file)return;
+ const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
+ if(!ext){appState.feedback='Formato de imagem inválido.';renderSection();return;}
+ await asyncOperation(async()=>{
+  const path=appState.tenant.id+'/branding/'+crypto.randomUUID()+'.'+ext;
+  await uploadImage(file,path);await saveWebsite({[field]:path});
+ },'Imagem atualizada. Visualize seu site para conferir.');
+}
+function websiteScreen(){
+ const div=el('div'),settings=appState.data.website||{},canEdit=['owner','manager'].includes(appState.member.role);
+ div.append(sectionHeading('Meu Site','Personalize sua vitrine e escolha quais imóveis exibir.'));
+ if(appState.feedback){div.append(el('div','notice',appState.feedback));appState.feedback='';}
+ if(!canEdit){div.append(el('div','alert-banner','Somente gestores e proprietários podem alterar o site.'));return div;}
+ const banner=el('div','site-intro'),intro=el('div');
+ intro.append(el('span','eyebrow','SEU SITE PROFISSIONAL'),el('h2','','Seu endereço digital, sua identidade.'));
+ intro.append(el('p','','Um site exclusivo para cada imobiliária, com layout premium, cores, fotos e atendimento próprios.'));
+ const actions=el('div','site-buttons'),preview=el('a','primary','Visualizar meu site');
+ preview.href=websiteUrl(true);preview.target='_blank';preview.rel='noopener';
+ actions.append(preview);
+ if(settings.is_published){const open=el('a','secondary','Abrir site público');open.href=websiteUrl();open.target='_blank';open.rel='noopener';actions.append(open);}
+ intro.append(actions);banner.append(intro);div.append(banner);
+ const status=el('div','site-status');
+ status.append(el('span','status'+(settings.is_published?' ok':''),settings.is_published?'Site publicado':'Site não publicado'));
+ status.append(el('span','status',appState.data.properties.filter(x=>x.published&&x.status==='available').length+' imóveis visíveis'));
+ div.append(status);
+ const columns=el('div','site-columns'),left=panel('Personalização','Atualize as informações públicas do seu site.');
+ const form=el('form','site-editor'),fields=[
+ {key:'site_name',label:'Nome da imobiliária',required:true,wide:true,max:100},
+ {key:'tagline',label:'Frase principal do site',required:true,wide:true,max:140},
+ {key:'about_text',label:'Sobre a imobiliária',kind:'textarea',wide:true},
+ {key:'primary_color',label:'Cor principal',kind:'color',required:true},
+ {key:'accent_color',label:'Cor de destaque',kind:'color',required:true},
+ {key:'whatsapp',label:'WhatsApp com DDD (somente números)',placeholder:'85999999999'},
+ {key:'public_phone',label:'Telefone para exibição'},
+ {key:'instagram_url',label:'Link do Instagram',wide:true},
+ {key:'address_text',label:'Endereço comercial',wide:true}
+ ];
+ const defaults={site_name:appState.tenant.name,tagline:'Encontre o imóvel ideal para você',primary_color:'#0E359D',accent_color:'#FF606A'};
+ const g=el('div','form-grid');
+ fields.forEach(f=>g.append(inputField(f,settings[f.key]??defaults[f.key]??'')));
+ const feedback=el('div'),save=el('button','primary','Salvar personalizações');save.type='submit';
+ form.append(g,feedback,save);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();save.disabled=true;feedback.replaceChildren();
+  try{
+   const values=Object.fromEntries(new FormData(form).entries());
+   values.whatsapp=String(values.whatsapp||'').replace(/\D/g,'')||null;
+   if(values.whatsapp&&!/^[0-9]{10,15}$/.test(values.whatsapp))throw Error('Informe um WhatsApp válido com DDD.');
+   for(const field of ['site_name','tagline','about_text','public_phone','instagram_url','address_text'])values[field]=values[field].trim()||null;
+   if(!values.site_name||!values.tagline)throw Error('Nome e frase principal são obrigatórios.');
+   await saveWebsite(values);appState.feedback='Personalizações salvas com sucesso.';await reloadData();renderSection();
+  }catch(err){feedback.replaceChildren(el('div','notice error',err.message));}
+  finally{save.disabled=false;}
+ });
+ left.append(form);
+ const right=el('div'),media=panel('Imagens do site','Logo e banner em JPG, PNG ou WEBP (até 7 MB).');
+ for(const [field,name] of [['logo_path','Logomarca'],['banner_path','Banner da página inicial']]){
+  const row=el('div','site-media');
+  const image=el('div','site-media-preview');
+  if(settings[field]){const pic=el('img');pic.src=mediaUrl(settings[field]);pic.alt=name;image.append(pic);}
+  else image.append(el('span','','◈'));
+  const label=el('div','site-media-label');label.append(el('strong','',name),el('small','',settings[field]?'Imagem enviada':'Nenhuma imagem enviada'));
+  const button=el('button','secondary','Enviar');button.type='button';button.addEventListener('click',()=>updateBrandingImage(field));
+  row.append(image,label,button);media.append(row);
+ }
+ const publication=panel('Publicação','O visitante só vê o site quando estiver publicado.');
+ publication.style.marginTop='17px';
+ const pub=el('button',settings.is_published?'secondary':'primary',settings.is_published?'Despublicar site':'Publicar meu site');
+ pub.type='button';pub.addEventListener('click',()=>publishWebsite(Boolean(settings.is_published)));publication.append(pub);
+ publication.append(el('p','tip','Endereço de teste: '+websiteUrl(false)));
+ right.append(media,publication);columns.append(left,right);div.append(columns);
+ const listings=panel('Imóveis no site','Publique somente os imóveis que deseja mostrar ao público.');
+ listings.style.marginTop='18px';
+ listings.append(rowsTable(['Imóvel','Cidade','Disponibilidade','Vitrine','Ação'],appState.data.properties,p=>[
+  p.title,p.city,{status:statuses[p.status]||p.status,ok:p.status==='available'},
+  {status:p.published?'Publicado':'Oculto',ok:p.published},
+  {actions:[['Fotos',()=>propertyGallery(p)],[p.published?'Ocultar':'Publicar',()=>togglePropertyPublish(p)]]}
+ ]));div.append(listings);return div;
+}
+function propertyGallery(p){
+ if(!['owner','manager'].includes(appState.member.role))return;
+ const overlay=el('div','overlay'),dialog=el('div','dialog'),head=el('header'),heading=el('div');
+ heading.append(el('h2','','Fotos do imóvel'),el('p','helper',p.title+' · máximo de 12 fotos'));
+ const close=el('button','close','×');close.type='button';close.addEventListener('click',()=>overlay.remove());
+ head.append(heading,close);dialog.append(head);
+ const images=appState.data.property_images.filter(x=>x.property_id===p.id),grid=el('div','property-photo-grid');
+ for(const item of images){
+  const tile=el('div','property-photo');
+  const image=el('img');image.src=mediaUrl(item.storage_path);image.alt='Foto cadastrada';tile.append(image);
+  const remove=el('button','tiny','Excluir');remove.type='button';
+  remove.addEventListener('click',async()=>{
+   if(!window.confirm('Excluir esta foto?'))return;
+   await asyncOperation(async()=>{
+    await request('/rest/v1/property_images?id=eq.'+encodeURIComponent(item.id)+'&tenant_id=eq.'+encodeURIComponent(appState.tenant.id),{method:'DELETE'});
+    await request('/storage/v1/object/ville-public-media/'+item.storage_path.split('/').map(encodeURIComponent).join('/'),{method:'DELETE'}).catch(()=>{});
+   },'Foto removida.');overlay.remove();
+  });
+  tile.append(remove);grid.append(tile);
+ }
+ if(!images.length)grid.append(el('p','helper','Nenhuma foto cadastrada ainda.'));
+ const add=el('button','primary','Adicionar foto');add.type='button';add.disabled=images.length>=12;
+ add.addEventListener('click',async()=>{
+  const file=await selectImage();if(!file)return;
+  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];if(!ext)return;
+  overlay.remove();
+  await asyncOperation(async()=>{
+   const path=appState.tenant.id+'/properties/'+p.id+'/'+crypto.randomUUID()+'.'+ext;
+   await uploadImage(file,path);
+   const rows=await request('/rest/v1/property_images',{method:'POST',prefer:'return=representation',
+    data:{tenant_id:appState.tenant.id,property_id:p.id,storage_path:path,position:images.length,created_by:appState.user.id}});
+   if(!Array.isArray(rows)||rows.length!==1)throw Error('O upload ocorreu, mas o registro não foi confirmado.');
+  },'Foto adicionada com sucesso.');
+ });
+ dialog.append(grid,add);overlay.append(dialog);document.body.append(overlay);
+}
+
 function settingsScreen(){
  const content=el('div');content.append(sectionHeading('Configurações','Dados básicos e acesso à conta.'));
  const p=panel('Imobiliária','Informações cadastradas pela VILLE.');
@@ -957,6 +1118,7 @@ function renderSection(){
   appState.section==='finance'?financeScreen():
   appState.section==='agents'?agentsScreen():
   appState.section==='documents'?documentsScreen():
+  appState.section==='website'?websiteScreen():
   appState.section==='reports'?reportsScreen():
   appState.section==='settings'?settingsScreen():future(appState.section));
 }

@@ -16,8 +16,22 @@ const esc=(v)=>String(v??'');
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=esc(text);return e;};
 const money=c=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c||0)/100);
 const moneyInput=c=>c==null?'':(Number(c)/100).toFixed(2).replace('.',',');
-const day=x=>x?new Date(x).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'—';
-const dateTime=x=>x?new Date(x).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'—';
+const day=x=>{
+ if(!x)return '—';
+ const match=String(x).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if(match)return match[3]+'/'+match[2]+'/'+match[1];
+ return new Date(x).toLocaleDateString('pt-BR');
+};
+const localDate=()=>{
+ const d=new Date(),pad=n=>String(n).padStart(2,'0');
+ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+};
+const localDateTimeValue=x=>{
+ if(!x)return '';
+ const d=new Date(x),pad=n=>String(n).padStart(2,'0');
+ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+};
+const dateTime=x=>x?new Date(x).toLocaleString('pt-BR'):'—';
 const toCents=(v,optional=false)=>{
  const t=String(v??'').trim();
  if(optional&&!t)return null;
@@ -349,7 +363,7 @@ function openForm(kind,row=null){
   let value=row?.[field.key]??defaults[field.key]??'';
   if(field.key==='sale_price')value=moneyInput(row?.sale_price_cents);
   if(field.key==='rental_price')value=moneyInput(row?.rental_price_cents);
-  if(field.key==='scheduled_at'&&value)value=new Date(value).toISOString().slice(0,16);
+  if(field.key==='scheduled_at'&&value)value=localDateTimeValue(value);
   grid.append(inputField(field,value));
  }
  const footer=el('div','dialog-footer'),cancel=el('button','secondary','Cancelar'),save=el('button','primary',row?'Salvar alterações':'Cadastrar');
@@ -519,12 +533,12 @@ function activateContract(contract){
 function markChargePaid(charge){
  if(charge.status!=='open')return;
  if(!window.confirm('Confirmar recebimento de '+money(charge.amount_cents)+'? Esta ação gerará o repasse ao proprietário e não poderá ser desfeita por esta tela.'))return;
- asyncOperation(async()=>{await mutate('rent_charges',{status:'paid',paid_on:new Date().toISOString().slice(0,10)},charge.id);},'Aluguel confirmado como recebido. Repasse calculado automaticamente.');
+ asyncOperation(async()=>{await mutate('rent_charges',{status:'paid',paid_on:localDate()},charge.id);},'Aluguel confirmado como recebido. Repasse calculado automaticamente.');
 }
 function markPayoutPaid(payout){
  if(payout.status!=='pending')return;
  if(!window.confirm('O valor de '+money(payout.net_cents)+' já foi realmente repassado ao proprietário?'))return;
- asyncOperation(async()=>{await mutate('owner_payouts',{status:'paid',paid_on:new Date().toISOString().slice(0,10)},payout.id);},'Repasse marcado como pago.');
+ asyncOperation(async()=>{await mutate('owner_payouts',{status:'paid',paid_on:localDate()},payout.id);},'Repasse marcado como pago.');
 }
 async function asyncOperation(fn,ok){
  try{await fn();appState.feedback=ok;try{await reloadData();}catch{appState.feedback+=' Atualize a página para ver os dados.';}renderSection();}
@@ -555,7 +569,7 @@ function financialEntryDialog(){
   {key:'category',label:'Categoria',required:true,placeholder:'Ex.: manutenção'},
   {key:'description',label:'Descrição',required:true,wide:true},
   {key:'amount',label:'Valor (R$)',required:true,placeholder:'Ex.: 250,00'},
-  {key:'occurred_on',label:'Data',kind:'date',value:new Date().toISOString().slice(0,10),required:true}
+  {key:'occurred_on',label:'Data',kind:'date',value:localDate(),required:true}
  ],'Registrar lançamento',async v=>{
   await mutate('finance_entries',{direction:v.direction,category:v.category.trim(),
    description:v.description.trim(),amount_cents:toCents(v.amount),occurred_on:v.occurred_on});

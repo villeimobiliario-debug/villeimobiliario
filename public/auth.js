@@ -123,3 +123,15 @@ export async function logout() {
   } catch { /* Always remove local session even if server is unavailable. */ }
   clearSession();
 }
+
+/** Execute only administrator RPCs; permissions are enforced again by PostgreSQL. */
+export async function adminRpc(operation, parameters) {
+  const permitted = new Set([
+    'admin_create_plan','admin_create_tenant','admin_update_tenant','admin_set_tenant_state'
+  ]);
+  if (!permitted.has(operation)) throw new Error('Operação administrativa não permitida.');
+  return authorizedApi(`${config.supabaseUrl}/rest/v1/rpc/${operation}`, {
+    method: 'POST',
+    body: parameters
+  });
+}

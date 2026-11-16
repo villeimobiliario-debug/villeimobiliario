@@ -12,6 +12,44 @@ const statuses={available:'Disponível',reserved:'Reservado',rented:'Alugado',so
  new:'Novo',contacted:'Em contato',visit:'Visita',proposal:'Proposta',won:'Concluído',lost:'Perdido',
  scheduled:'Agendada',completed:'Realizada',cancelled:'Cancelada'};
 const types={house:'Casa',apartment:'Apartamento',land:'Terreno',commercial:'Comercial',rural:'Rural',other:'Outro'};
+// Ícones vetoriais locais: sem dependências externas, fontes ou novas permissões.
+const iconPaths={
+ dashboard:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ properties:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+ contacts:'<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5.5a3 3 0 0 1 0 5M17 15a5 5 0 0 1 4 5"/>',
+ leads:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+ visits:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4m8-4v4M3 10h18m6 5h2m3 0h2"/>',
+ sales:'<path d="m3 17 6-6 4 4 8-8M16 7h5v5"/>',
+ rentals:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M9 10V7a3 3 0 0 1 6 0v3M3 5l9-3 9 3"/>',
+ finance:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18m-14 7h4"/>',
+ agents:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
+ documents:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8"/>',
+ reports:'<path d="M4 20V11m5 9V4m5 16v-7m5 7V8M2 21h20"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.5 1.1-1.5 2.6-1.8-.7a8 8 0 0 1-1.9 1.1l-.3 2h-3l-.3-2a8 8 0 0 1-1.9-1.1l-1.8.7L7 16.2 8.5 15a9 9 0 0 1 0-2l-1.5-1.2L8.5 9l1.8.7a8 8 0 0 1 1.9-1.1l.3-2h3l.3 2a8 8 0 0 1 1.9 1.1l1.8-.7L21 11.8 19.5 13a8 8 0 0 1-.1 2z" transform="translate(-1 -2)"/>',
+ logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+ menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+ chevron:'<path d="m9 18 6-6-6-6"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ arrow:'<path d="M7 17 17 7M8 7h9v9"/>',
+ bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+ shield:'<path d="m12 2 9 4v6c0 5-4 8-9 10-5-2-9-5-9-10V6z"/><path d="m9 12 2 2 4-4"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>',
+ check:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+ sparkle:'<path d="m12 3 1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3zM19 17l.7 2.3L22 20l-2.3.7L19 23l-.7-2.3L16 20l2.3-.7L19 17z"/>'
+};
+function uiIcon(key,size=20){
+ const body=iconPaths[key]||iconPaths.dashboard;
+ return '<svg aria-hidden="true" width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+body+'</svg>';
+}
+function iconElement(key,cls=''){
+ const node=document.createElement('span');node.className=cls;node.innerHTML=uiIcon(key);return node;
+}
+function switchTo(section){
+ appState.section=section;renderSection();
+ root.querySelector('.shell')?.classList.remove('menu-open');
+ root.querySelector('#mobile-menu')?.setAttribute('aria-expanded','false');
+}
 const esc=(v)=>String(v??'');
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=esc(text);return e;};
 const money=c=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c||0)/100);
@@ -182,31 +220,78 @@ async function reloadData(){
 }
 async function logout(){saveSession(null);appState.tenant=null;loginScreen();}
 function renderShell(){
- root.innerHTML=`<div class="shell"><aside class="sidebar"><div class="logo">VILLE<i>.</i><small>IMOBILIÁRIO</small></div>
- <div class="nav-title">GESTÃO DA IMOBILIÁRIA</div><nav class="nav" id="nav"></nav>
- <div class="side-bottom"><button type="button" id="logout">Sair da conta</button></div></aside>
- <div class="main"><header class="topbar"><div style="display:flex;gap:14px;align-items:center"><button class="mobile-menu" id="mobile-menu" type="button">☰</button><div class="top-tenant"><strong id="top-name"></strong><small>Área de gestão • VILLE Imobiliário</small></div></div><div><strong id="top-role"></strong></div></header>
- <main class="content" id="content"></main></div></div>`;
+ root.innerHTML=`<div class="shell">
+ <aside class="sidebar" id="agency-sidebar">
+  <div class="brand-block"><span class="brand-mark">V</span><div class="brand-words"><strong>VILLE<span>.</span></strong><small>IMOBILIÁRIO</small></div></div>
+  <div class="workspace-chip"><span class="workspace-symbol">${uiIcon('properties',17)}</span><div><small>ESPAÇO DE TRABALHO</small><strong>Gestão imobiliária</strong></div></div>
+  <div class="nav-title">MENU PRINCIPAL</div><nav class="nav" id="nav" aria-label="Módulos da imobiliária"></nav>
+  <div class="side-bottom">
+   <div class="sidebar-access"><span class="sidebar-access-icon">${uiIcon('shield',19)}</span><div><strong id="side-status">Acesso protegido</strong><small>Seu espaço exclusivo VILLE</small></div></div>
+   <button type="button" id="logout" class="logout-button">${uiIcon('logout',18)}<span>Sair da plataforma</span></button>
+  </div>
+ </aside>
+ <div class="sidebar-overlay" id="sidebar-overlay"></div>
+ <div class="main">
+  <header class="topbar">
+   <div class="topbar-leading"><button class="mobile-menu" id="mobile-menu" aria-label="Abrir menu de navegação" aria-controls="agency-sidebar" aria-expanded="false" type="button">${uiIcon('menu',21)}</button>
+    <div class="top-tenant"><div class="top-breadcrumb"><span>VILLE Imobiliário</span>${uiIcon('chevron',13)}<strong>Minha gestão</strong></div><strong class="tenant-display" id="top-name"></strong></div></div>
+   <div class="top-actions"><span class="plan-pill"><span class="pill-pulse"></span><span id="top-plan"></span></span>
+    <div class="top-user"><span class="top-avatar" id="top-avatar">V</span><div class="top-user-copy"><strong id="top-role"></strong><small>Conta da imobiliária</small></div></div>
+   </div>
+  </header>
+  <main class="content" id="content" tabindex="-1"></main>
+ </div></div>`;
+ const role=({owner:'Proprietário',manager:'Gestor',agent:'Corretor'})[appState.member.role]||'Equipe';
+ const trial=appState.subscription?.status==='trial';
  root.querySelector('#top-name').textContent=appState.tenant.name;
- root.querySelector('#top-role').textContent=({owner:'Proprietário',manager:'Gestor',agent:'Corretor'})[appState.member.role]||'Equipe';
+ root.querySelector('#top-role').textContent=role;
+ root.querySelector('#top-avatar').textContent=appState.tenant.name.slice(0,1).toLocaleUpperCase('pt-BR')||'V';
+ root.querySelector('#top-plan').textContent=trial?'Período de teste':appState.subscription?.status==='active'?'Plano ativo':'Minha assinatura';
+ root.querySelector('#side-status').textContent=trial?'Teste gratuito em andamento':'Ambiente protegido';
  const nav=root.querySelector('#nav');
- navigation.forEach(([key,label])=>{const b=el('button','',label);b.type='button';b.dataset.section=key;b.addEventListener('click',()=>{appState.section=key;renderSection();root.querySelector('.shell').classList.remove('menu-open');});nav.append(b);});
+ const groups={dashboard:'PAINEL',properties:'GESTÃO DE IMÓVEIS',contacts:'GESTÃO DE IMÓVEIS',leads:'GESTÃO DE IMÓVEIS',visits:'GESTÃO DE IMÓVEIS',sales:'NEGÓCIOS E FINANÇAS',rentals:'NEGÓCIOS E FINANÇAS',finance:'NEGÓCIOS E FINANÇAS',agents:'ADMINISTRAÇÃO',documents:'ADMINISTRAÇÃO',reports:'ADMINISTRAÇÃO',settings:'ADMINISTRAÇÃO'};
+ let last='';
+ navigation.forEach(([key,label])=>{
+  if(groups[key]!==last){if(last)nav.append(el('div','nav-group-label',groups[key]));last=groups[key];}
+  const btn=el('button','nav-item');btn.type='button';btn.dataset.section=key;
+  btn.append(iconElement(key,'nav-icon'),el('span','nav-label',label));
+  btn.addEventListener('click',()=>switchTo(key));nav.append(btn);
+ });
  root.querySelector('#logout').addEventListener('click',logout);
- root.querySelector('#mobile-menu').addEventListener('click',()=>root.querySelector('.shell').classList.toggle('menu-open'));
+ const menu=root.querySelector('#mobile-menu');
+ const closeMenu=()=>{root.querySelector('.shell').classList.remove('menu-open');menu.setAttribute('aria-expanded','false');};
+ menu.addEventListener('click',()=>{const opened=root.querySelector('.shell').classList.toggle('menu-open');menu.setAttribute('aria-expanded',String(opened));});
+ root.querySelector('#sidebar-overlay').addEventListener('click',closeMenu);
  renderSection();
 }
 function sectionHeading(title,subtitle,onAdd){
- const head=el('div','page-title'),titles=el('div');
+ const head=el('div','page-title'),titles=el('div','page-title-copy');
  titles.append(el('span','eyebrow','PAINEL DA IMOBILIÁRIA'),el('h1','',title),el('p','',subtitle));head.append(titles);
- if(onAdd){const b=el('button','primary','+ Novo registro');b.addEventListener('click',onAdd);head.append(b);}
+ if(onAdd){const b=el('button','primary');b.append(iconElement('plus','button-icon'),document.createTextNode(' Novo registro'));b.addEventListener('click',onAdd);head.append(b);}
  return head;
 }
-function panel(title,sub){const p=el('section','panel');p.append(el('h2','',title));if(sub)p.append(el('p','',sub));return p;}
+function panel(title,sub){
+ const p=el('section','panel'),heading=el('div','panel-heading');
+ const text=el('div','panel-heading-copy');text.append(el('h2','',title));
+ if(sub)text.append(el('p','',sub));
+ heading.append(text);p.append(heading);return p;
+}
 function rowsTable(headers,rows,renderCells){
  const wrap=el('div','table-wrap'),table=el('table','data-table'),thead=el('thead'),hrow=el('tr'),tbody=el('tbody');
  for(const h of headers)hrow.append(el('th','',h));
  thead.append(hrow);table.append(thead);
- if(!rows.length){const tr=el('tr'),td=el('td','empty','Nenhum registro encontrado.');td.colSpan=headers.length;tr.append(td);tbody.append(tr);}
+ if(headers.length<=3)wrap.classList.add('compact-table');
+ if(!rows.length){
+  const tr=el('tr'),td=el('td','empty');
+  td.colSpan=headers.length;
+  const state=el('div','empty-state');
+  const msg=headers.includes('Imóvel')?['Ainda não há registros','Cadastre o primeiro imóvel para começar a organizar sua operação.']:
+    headers.includes('Data')?['Agenda tranquila por aqui','As próximas visitas aparecerão neste espaço.']:
+    ['Nada por aqui ainda','Os registros vão aparecer conforme você utilizar este módulo.'];
+  state.append(iconElement(headers.includes('Data')?'visits':headers.includes('Imóvel')?'properties':'dashboard','empty-state-icon'),
+   el('strong','',msg[0]),el('span','',msg[1]));
+  td.append(state);tr.append(td);tbody.append(tr);
+ }
  for(const r of rows){
   const tr=el('tr');for(const entry of renderCells(r)){
    const td=el('td');if(entry&&typeof entry==='object'&&entry.status){td.append(el('span','status'+(entry.ok?' ok':entry.warn?' warn':''),entry.status));}
@@ -226,29 +311,89 @@ function currentSummary(){
  return {available,active,upcoming};
 }
 function dashboard(){
- const content=el('div');
- content.append(sectionHeading('Visão geral','Tudo o que importa para a operação da sua imobiliária.'));
- const {available,active,upcoming}=currentSummary();
+ const content=el('div','dashboard-page');
+ const summary=currentSummary(),canManage=['owner','manager'].includes(appState.member.role);
+ content.append(sectionHeading('Visão geral','Acompanhe sua operação de forma simples e inteligente.'));
+ const hero=el('section','dashboard-hero');
+ const heroCopy=el('div','hero-copy'),chip=el('span','hero-chip');
+ chip.append(iconElement('sparkle'),document.createTextNode(' SUA CENTRAL DE GESTÃO'));
+ heroCopy.append(chip,el('h2','','Tudo o que sua imobiliária precisa, em um só lugar.'));
+ heroCopy.append(el('p','','Acompanhe seus imóveis, organize oportunidades e mantenha o dia a dia sob controle.'));
+ const heroActions=el('div','hero-actions');
+ const newProperty=el('button','hero-primary');
+ newProperty.append(iconElement(canManage?'plus':'properties'),document.createTextNode(canManage?' Cadastrar imóvel':'Ver meus imóveis'));
+ newProperty.addEventListener('click',()=>canManage?openForm('properties'):switchTo('properties'));
+ const agenda=el('button','hero-secondary');agenda.append(iconElement('visits'),document.createTextNode(' Ver agenda'));
+ agenda.addEventListener('click',()=>switchTo('visits'));
+ heroActions.append(newProperty,agenda);heroCopy.append(heroActions);
+ const artwork=el('div','hero-artwork');
+ artwork.setAttribute('aria-hidden','true');
+ const heroTile=el('div','hero-tile');
+ const tileIcon=iconElement('properties','hero-tile-icon');
+ const tileMain=el('div','hero-tile-text');
+ tileMain.append(el('small','','PORTFÓLIO ATUAL'),el('strong','',appState.data.properties.length),el('span','','imóveis cadastrados'));
+ heroTile.append(tileIcon,tileMain);
+ const orbit=el('div','hero-orbit');
+ orbit.append(el('span','hero-orbit-dot'),iconElement('sales','hero-orbit-icon'));
+ artwork.append(orbit,heroTile);
+ hero.append(heroCopy,artwork);content.append(hero);
  const stats=[
- ['Imóveis cadastrados',appState.data.properties.length,'Seu portfólio completo'],
- ['Imóveis disponíveis',available,'Prontos para negociação'],
- ['Oportunidades abertas',active,'Em acompanhamento'],
- ['Visitas agendadas',upcoming,'Próximas visitas']
+  {label:'Imóveis cadastrados',value:appState.data.properties.length,foot:'Total no seu portfólio',icon:'properties',color:'blue'},
+  {label:'Imóveis disponíveis',value:summary.available,foot:'Prontos para negociar',icon:'check',color:'teal'},
+  {label:'Oportunidades abertas',value:summary.active,foot:'Clientes em atendimento',icon:'leads',color:'coral'},
+  {label:'Visitas agendadas',value:summary.upcoming,foot:'Próximos compromissos',icon:'visits',color:'violet'}
  ];
- const g=el('div','grid4');for(const [title,num,foot] of stats){const c=el('section','stat');c.append(el('span','',title),el('strong','',num),el('small','',foot));g.append(c);}content.append(g);
- if(appState.subscription?.status==='trial')content.append(el('p','tip','Seu período gratuito está em andamento. Fim previsto: '+day(appState.subscription.trial_ends_at)+'.'));
- const two=el('div','two'),left=panel('Imóveis recentes','Últimos imóveis inseridos no sistema'),right=panel('Próximas visitas','Compromissos organizados por data');
- left.append(rowsTable(['Imóvel','Cidade','Situação'],appState.data.properties.slice(0,6),p=>[p.title,p.city,{status:statuses[p.status]||p.status,ok:p.status==='available'}]));
- const visits=appState.data.visits.filter(v=>v.status==='scheduled'&&new Date(v.scheduled_at)>=new Date()).sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at)).slice(0,6);
- right.append(rowsTable(['Data','Imóvel','Cliente'],visits,v=>[dateTime(v.scheduled_at),propertyName(v.property_id),contactName(v.contact_id)]));
- two.append(left,right);content.append(two);
- const alerts=buildAlerts();
- if(alerts.length){
-   const p=panel('Alertas e vencimentos','Informações calculadas automaticamente a partir dos registros.');
-   alerts.slice(0,8).forEach(item=>p.append(el('p','alert-banner',item)));
-   content.append(p);
+ const cards=el('div','grid4');
+ for(const stat of stats){
+  const card=el('section','stat stat-'+stat.color);
+  const top=el('div','stat-head');
+  top.append(el('span','stat-label',stat.label),iconElement(stat.icon,'stat-icon'));
+  card.append(top,el('strong','stat-value',stat.value));
+  const bottom=el('div','stat-bottom');
+  bottom.append(el('span','stat-indicator'),el('small','stat-foot',stat.foot));
+  card.append(bottom);cards.append(card);
  }
- content.append(el('p','tip','Dashboard conectado ao Supabase. Os indicadores mostram exclusivamente dados cadastrados para esta imobiliária.'));
+ content.append(cards);
+ if(appState.subscription?.status==='trial'){
+  const trial=el('div','trial-strip');
+  trial.append(iconElement('clock','trial-icon'),el('span','', 'Seu período gratuito está em andamento. Termina em '+day(appState.subscription.trial_ends_at)+'.'));
+  trial.append(el('span','trial-tag','TESTE GRATUITO'));content.append(trial);
+ }
+ const quick=el('div','quick-section');
+ const quickHead=el('div','quick-heading');quickHead.append(el('h2','','Acesso rápido'),el('p','','O que você deseja fazer agora?'));quick.append(quickHead);
+ const actions=el('div','quick-grid');
+ const entries=[
+  ['properties','Imóveis','Gerencie seu portfólio de propriedades.'],
+  ['contacts','Clientes','Organize novos clientes e proprietários.'],
+  ['visits','Agenda','Acompanhe e organize suas visitas.']
+ ];
+ for(const [key,label,description] of entries){
+  const button=el('button','quick-card');
+  button.append(iconElement(key,'quick-icon'));
+  const body=el('div','quick-copy');body.append(el('strong','',label),el('small','',description));
+  button.append(body,iconElement('arrow','quick-arrow'));
+  button.addEventListener('click',()=>switchTo(key));actions.append(button);
+ }
+ quick.append(actions);content.append(quick);
+ const two=el('div','two dashboard-lists'),recent=panel('Imóveis recentes','Últimos imóveis adicionados ao seu portfólio'),
+       upcomingPanel=panel('Próximas visitas','Compromissos organizados por data');
+ const recentRows=appState.data.properties.slice(0,6);
+ recent.append(rowsTable(['Imóvel','Cidade','Situação'],recentRows,p=>[p.title,p.city,{status:statuses[p.status]||p.status,ok:p.status==='available'}]));
+ const visits=appState.data.visits.filter(v=>v.status==='scheduled'&&new Date(v.scheduled_at)>=new Date()).sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at)).slice(0,6);
+ upcomingPanel.append(rowsTable(['Data','Imóvel','Cliente'],visits,v=>[dateTime(v.scheduled_at),propertyName(v.property_id),contactName(v.contact_id)]));
+ const recentFooter=el('button','panel-link');recentFooter.append(document.createTextNode('Ver todos os imóveis '),iconElement('arrow'));
+ recentFooter.addEventListener('click',()=>switchTo('properties'));recent.append(recentFooter);
+ const visitFooter=el('button','panel-link');visitFooter.append(document.createTextNode('Abrir agenda '),iconElement('arrow'));
+ visitFooter.addEventListener('click',()=>switchTo('visits'));upcomingPanel.append(visitFooter);
+ two.append(recent,upcomingPanel);content.append(two);
+ const alerts=buildAlerts(),alertPanel=panel('Central de alertas','Avisos sobre vencimentos, contratos e visitas.');
+ alertPanel.classList.add('dashboard-alerts');
+ const alertTitle=alertPanel.querySelector('h2');if(alertTitle)alertTitle.prepend(iconElement('bell','panel-title-icon'));
+ if(alerts.length)alerts.slice(0,8).forEach(message=>{const item=el('div','alert-banner');item.append(iconElement('bell'),el('span','',message));alertPanel.append(item);});
+ else {const allGood=el('div','all-clear');allGood.append(iconElement('check','all-clear-icon'));
+  const clearText=el('div');clearText.append(el('strong','','Nenhum alerta pendente'),el('span','','Quando houver prazos ou compromissos próximos, eles aparecerão aqui.'));
+  allGood.append(clearText);alertPanel.append(allGood);}
+ content.append(alertPanel);
  return content;
 }
 function propertyName(id){return appState.data.properties.find(x=>x.id===id)?.title||'—';}

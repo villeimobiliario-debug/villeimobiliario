@@ -19,3 +19,5 @@
 .panel>.alert-banner{margin:12px 0}
 .table-wrap .tiny{max-width:none}
 @media(max-width:520px){.summary-line{align-items:flex-start}.summary-line strong{max-width:55%}}
+
+[hidden]{display:none!important}

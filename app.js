@@ -380,7 +380,8 @@ function render(){
   const mrr=s.filter(x=>x.status==="active").reduce((sum,x)=>sum+Number(planById.get(x.plan_id)?.monthly_price_cents||0),0);
   text("stat-mrr",cash(mrr));
   paintTable("recent-tenants",t.slice(0,5),3,(row,x)=>{makeCell(row,x.name);makeCell(row,date(x.created_at));makeBadge(row,x.state);});
-  renderTenants();\n  updatePlanOptions();
+  renderTenants();
+  updatePlanOptions();
   paintTable("all-subscriptions",s,4,(row,x)=>{makeCell(row,nameById.get(x.tenant_id)||"—");makeCell(row,planById.get(x.plan_id)?.name||"—");makeBadge(row,x.status);makeCell(row,date(x.next_due_on||x.trial_ends_at));});
   paintTable("all-payments",p,4,(row,x)=>{makeCell(row,nameById.get(x.tenant_id)||"—");makeCell(row,cash(x.amount_cents));makeBadge(row,x.state);makeCell(row,date(x.submitted_at));});
   const due=$("due-list");
@@ -438,7 +439,8 @@ async function handleAuth(event){
   finally{button.disabled=false;}
 }
 async function bootstrap(){
-  $("auth-form").addEventListener("submit",handleAuth);\n  setupTenants();
+  $("auth-form").addEventListener("submit",handleAuth);
+  setupTenants();
   $("setup-btn").addEventListener("click",()=>setMode("setup"));
   $("forgot-btn").addEventListener("click",()=>setMode("reset"));
   document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>page(b.dataset.page)));

@@ -431,3 +431,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){
  button,input,select,textarea,.stat,.quick-card,.nav-item,.sidebar{transition:none!important;animation:none!important}
 }
+
+
+/* Precedência dos ícones sobre os estilos legados dos cards */
+.stat .stat-icon{display:grid;min-height:43px}
+.stat .stat-indicator{display:block;min-height:0;height:7px;line-height:0}
+@media(max-width:610px){.stat .stat-icon{min-height:36px}}

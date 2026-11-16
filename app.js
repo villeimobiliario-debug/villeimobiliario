@@ -79,6 +79,222 @@ async function query(table,select="*",order=null,limit=500){
   if(result.retry) throw new Error("Sessão inválida. Entre novamente.");
   return result.data;
 }
+async function rpc(name,params){
+  const endpoint=REST_ENDPOINT+"/rpc/"+encodeURIComponent(name);
+  const request=async(token)=>{
+    let response;
+    try{
+      response=await fetch(endpoint,{
+        method:"POST",cache:"no-store",
+        headers:{"apikey":PUBLIC_KEY,"Authorization":"Bearer "+token,
+          "Content-Type":"application/json","Accept":"application/json"},
+        body:JSON.stringify(params)
+      });
+    }catch{throw new Error("Falha de conexão com o banco. Verifique sua internet.");}
+    let payload=null;
+    try{payload=await response.json();}catch{}
+    if(response.status===401)return {retry:true};
+    if(!response.ok){
+      if(response.status===403)throw new Error("Você não possui permissão para executar esta operação.");
+      if(payload?.code==="23505")throw new Error("Já existe um cadastro com esse identificador ou nome de plano.");
+      throw new Error(payload?.message||"Não foi possível concluir a operação.");
+    }
+    return {data:payload};
+  };
+  let r=await request(await accessToken());
+  if(r.retry){await refreshSession();r=await request(await accessToken());}
+  if(r.retry)throw new Error("Sua sessão expirou. Entre novamente.");
+  return r.data;
+}
+function slugify(value){
+  return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,80);
+}
+function parseBrlToCents(value){
+  const v=String(value||"").trim();
+  if(!/^\d+([,.]\d{1,2})?$/.test(v))throw new Error("Informe um preço válido, como 197,00.");
+  const [whole,frac=""]=v.replace(",",".").split(".");
+  const cents=Number(whole)*100+Number((frac+"00").slice(0,2));
+  if(!Number.isSafeInteger(cents)||cents<0||cents>100000000)throw new Error("Valor fora do limite permitido.");
+  return cents;
+}
+const T_MODAL="tenant-modal",P_MODAL="plan-modal";
+function showModal(id){
+  hide(id,false);
+  document.body.style.overflow="hidden";
+  (id===T_MODAL?$("tenant-name"):$("plan-name")).focus();
+}
+function closeModal(id){
+  hide(id,true);
+  document.body.style.overflow="";
+}
+function formatContact(value){
+  return String(value||"").trim();
+}
+function openCreateTenant(){
+  $("tenant-form").reset();
+  $("tenant-edit-id").value="";
+  $("tenant-slug").disabled=false;
+  hide("tenant-plan-field",false);
+  $("tenant-plan").required=true;
+  $("tenant-form-notice").classList.add("hidden");
+  text("tenant-modal-title","Cadastrar imobiliária");
+  text("save-tenant-btn","Cadastrar e iniciar teste");
+  updatePlanOptions();
+  if(!cache.plans.some(x=>x.active)){
+    closeModal(T_MODAL);showModal(P_MODAL);
+    notice("plan-form-notice","Crie primeiro um plano para vincular a nova imobiliária.");
+    return;
+  }
+  showModal(T_MODAL);
+}
+function openEditTenant(id){
+  const t=cache.tenants.find(x=>x.id===id);
+  if(!t)throw new Error("Imobiliária não encontrada.");
+  $("tenant-form").reset();
+  $("tenant-edit-id").value=id;
+  $("tenant-name").value=t.name||"";
+  $("tenant-slug").value=t.slug||"";
+  $("tenant-slug").disabled=true;
+  $("tenant-contact-name").value=t.contact_name||"";
+  $("tenant-contact-email").value=t.contact_email||"";
+  $("tenant-contact-phone").value=t.contact_phone||"";
+  hide("tenant-plan-field",true);
+  $("tenant-plan").required=false;
+  text("tenant-modal-title","Editar imobiliária");
+  text("save-tenant-btn","Salvar alterações");
+  notice("tenant-form-notice","");
+  showModal(T_MODAL);
+}
+function updatePlanOptions(){
+  const select=$("tenant-plan");
+  const prior=select.value;
+  select.replaceChildren();
+  const first=document.createElement("option");
+  first.value="";first.textContent="Selecione um plano";select.appendChild(first);
+  cache.plans.filter(x=>x.active).forEach(p=>{
+    const option=document.createElement("option");
+    option.value=p.id;
+    option.textContent=p.name+" — "+cash(p.monthly_price_cents)+"/mês";
+    select.appendChild(option);
+  });
+  if([...select.options].some(x=>x.value===prior))select.value=prior;
+}
+async function savePlan(event){
+  event.preventDefault();
+  const btn=$("save-plan-btn");
+  btn.disabled=true;
+  notice("plan-form-notice","");
+  try{
+    const name=$("plan-name").value.trim();
+    const cents=parseBrlToCents($("plan-price").value);
+    if(name.length<2)throw new Error("Informe o nome do plano.");
+    await rpc("admin_create_plan",{p_name:name,p_price_cents:cents});
+    await loadDashboard();
+    $("plan-form").reset();
+    closeModal(P_MODAL);
+    notice("data-notice","Plano criado. Já é possível cadastrar uma imobiliária.");
+  }catch(e){notice("plan-form-notice",e.message,true);}
+  finally{btn.disabled=false;}
+}
+async function saveTenant(event){
+  event.preventDefault();
+  const btn=$("save-tenant-btn");
+  btn.disabled=true;
+  notice("tenant-form-notice","");
+  try{
+    const id=$("tenant-edit-id").value;
+    const name=formatContact($("tenant-name").value);
+    const contactName=formatContact($("tenant-contact-name").value);
+    const contactEmail=formatContact($("tenant-contact-email").value).toLowerCase();
+    const contactPhone=formatContact($("tenant-contact-phone").value);
+    if(name.length<2||contactName.length<2||!contactEmail)throw new Error("Preencha os campos obrigatórios.");
+    const common={p_name:name,p_contact_name:contactName,p_contact_email:contactEmail,p_contact_phone:contactPhone};
+    if(id)await rpc("admin_update_tenant",{p_tenant_id:id,...common});
+    else{
+      const slug=$("tenant-slug").value.trim();
+      const plan=$("tenant-plan").value;
+      if(!slug||!plan)throw new Error("Informe o identificador e escolha um plano.");
+      await rpc("admin_create_tenant",{...common,p_slug:slug,p_plan_id:plan});
+    }
+    closeModal(T_MODAL);
+    await loadDashboard();
+    notice("data-notice",id?"Dados da imobiliária atualizados.":"Imobiliária cadastrada com 7 dias de teste. O login do responsável será criado na próxima etapa.");
+    page("tenants");
+  }catch(e){notice("tenant-form-notice",e.message,true);}
+  finally{btn.disabled=false;}
+}
+async function changeTenantState(id){
+  const tenant=cache.tenants.find(x=>x.id===id);
+  if(!tenant)return;
+  const disabling=tenant.state==="enabled";
+  const description=disabling
+    ?"Deseja suspender "+tenant.name+"? O status da assinatura será marcado como suspenso. Nenhum dado será excluído."
+    :"Deseja reativar "+tenant.name+"? A situação da assinatura será recalculada, sem gerar novos dias de teste.";
+  if(!window.confirm(description))return;
+  try{
+    await rpc("admin_set_tenant_state",{p_tenant_id:id,p_state:disabling?"disabled":"enabled"});
+    await loadDashboard();
+    notice("data-notice",disabling?"Imobiliária suspensa.":"Imobiliária reativada.");
+    page("tenants");
+  }catch(e){notice("data-notice",e.message,true);}
+}
+function renderTenants(){
+  const queryText=$("tenant-search").value.trim().toLocaleLowerCase("pt-BR");
+  const filter=$("tenant-filter").value;
+  const result=cache.tenants.filter(t=>
+    (filter==="all"||t.state===filter) &&
+    [t.name,t.slug,t.contact_name,t.contact_email,t.contact_phone].some(v=>String(v||"").toLocaleLowerCase("pt-BR").includes(queryText))
+  );
+  const body=$("all-tenants");
+  body.replaceChildren();
+  if(!result.length){emptyRow(body,6,"Nenhuma imobiliária encontrada.");return;}
+  result.forEach(t=>{
+    const tr=document.createElement("tr");
+    const name=document.createElement("td");
+    const strong=document.createElement("strong");strong.className="tenant-name-cell";strong.textContent=t.name;
+    const slug=document.createElement("small");slug.className="tenant-slug";slug.textContent=t.slug;
+    name.append(strong,slug);tr.appendChild(name);
+    makeCell(tr,t.contact_name||"—");
+    const contact=document.createElement("td");contact.className="tenant-contact";
+    const mail=document.createElement("span");mail.textContent=t.contact_email||"—";
+    const phone=document.createElement("small");phone.textContent=t.contact_phone||"";
+    contact.append(mail,phone);tr.appendChild(contact);
+    makeBadge(tr,t.state);
+    makeCell(tr,date(t.created_at));
+    const actions=document.createElement("td");
+    const edit=document.createElement("button");edit.type="button";edit.className="tenant-action";edit.textContent="Editar";
+    edit.addEventListener("click",()=>openEditTenant(t.id));
+    const toggle=document.createElement("button");toggle.type="button";
+    toggle.className="tenant-action"+(t.state==="enabled"?" danger":"");
+    toggle.textContent=t.state==="enabled"?"Suspender":"Reativar";
+    toggle.addEventListener("click",()=>changeTenantState(t.id));
+    actions.append(edit,toggle);tr.appendChild(actions);body.appendChild(tr);
+  });
+}
+function setupTenants(){
+  $("add-plan-btn").addEventListener("click",()=>{notice("plan-form-notice","");$("plan-form").reset();showModal(P_MODAL);});
+  $("add-tenant-btn").addEventListener("click",openCreateTenant);
+  $("tenant-name").addEventListener("input",()=>{
+    if(!$("tenant-edit-id").value && !$("tenant-slug").dataset.manuallyChanged)
+      $("tenant-slug").value=slugify($("tenant-name").value);
+  });
+  $("tenant-slug").addEventListener("input",()=>{
+    $("tenant-slug").dataset.manuallyChanged="true";
+  });
+  $("close-tenant-modal").addEventListener("click",()=>closeModal(T_MODAL));
+  $("cancel-tenant-btn").addEventListener("click",()=>closeModal(T_MODAL));
+  $("close-plan-modal").addEventListener("click",()=>closeModal(P_MODAL));
+  $("cancel-plan-btn").addEventListener("click",()=>closeModal(P_MODAL));
+  $("tenant-form").addEventListener("submit",saveTenant);
+  $("plan-form").addEventListener("submit",savePlan);
+  $("tenant-search").addEventListener("input",renderTenants);
+  $("tenant-filter").addEventListener("change",renderTenants);
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape") [T_MODAL,P_MODAL].forEach(id=>{if(!$(id).classList.contains("hidden"))closeModal(id);});
+  });
+}
+
 function showAuth(message="",error=false){
   hide("app-screen",true);
   hide("auth-screen",false);
@@ -112,7 +328,7 @@ async function loadDashboard(){
   if(rows.length!==1) throw new Error("Esta conta não possui permissão administrativa. Acesso negado.");
   cache.settings=rows[0];
   const responses=await Promise.all([
-    query("tenants","id,name,slug,state,created_at","created_at.desc"),
+    query("tenants","id,name,slug,state,created_at,contact_name,contact_email,contact_phone","created_at.desc"),
     query("subscription_plans","id,name,monthly_price_cents,active"),
     query("subscriptions","tenant_id,plan_id,status,trial_ends_at,next_due_on,paid_until"),
     query("invoices","id,tenant_id,due_on,amount_cents,status"),
@@ -164,7 +380,7 @@ function render(){
   const mrr=s.filter(x=>x.status==="active").reduce((sum,x)=>sum+Number(planById.get(x.plan_id)?.monthly_price_cents||0),0);
   text("stat-mrr",cash(mrr));
   paintTable("recent-tenants",t.slice(0,5),3,(row,x)=>{makeCell(row,x.name);makeCell(row,date(x.created_at));makeBadge(row,x.state);});
-  paintTable("all-tenants",t,4,(row,x)=>{makeCell(row,x.name);makeCell(row,x.slug);makeCell(row,date(x.created_at));makeBadge(row,x.state);});
+  renderTenants();\n  updatePlanOptions();
   paintTable("all-subscriptions",s,4,(row,x)=>{makeCell(row,nameById.get(x.tenant_id)||"—");makeCell(row,planById.get(x.plan_id)?.name||"—");makeBadge(row,x.status);makeCell(row,date(x.next_due_on||x.trial_ends_at));});
   paintTable("all-payments",p,4,(row,x)=>{makeCell(row,nameById.get(x.tenant_id)||"—");makeCell(row,cash(x.amount_cents));makeBadge(row,x.state);makeCell(row,date(x.submitted_at));});
   const due=$("due-list");
@@ -222,7 +438,7 @@ async function handleAuth(event){
   finally{button.disabled=false;}
 }
 async function bootstrap(){
-  $("auth-form").addEventListener("submit",handleAuth);
+  $("auth-form").addEventListener("submit",handleAuth);\n  setupTenants();
   $("setup-btn").addEventListener("click",()=>setMode("setup"));
   $("forgot-btn").addEventListener("click",()=>setMode("reset"));
   document.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>page(b.dataset.page)));

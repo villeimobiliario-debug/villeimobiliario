@@ -1,0 +1,146 @@
+import {config} from '../config.js';
+const root=document.getElementById('site');
+const params=new URLSearchParams(location.search);
+const slug=(params.get('imobiliaria')||'').trim().toLowerCase();
+const preview=params.get('preview')==='1';
+const mediaBase=config.supabaseUrl+'/storage/v1/object/public/ville-public-media/';
+const $=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=String(text??'');return n;};
+const money=c=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(Number(c||0)/100);
+const types={house:'Casa',apartment:'Apartamento',land:'Terreno',commercial:'Imóvel comercial',rural:'Imóvel rural',other:'Imóvel'};
+const purposes={rent:'Aluguel',sale:'Venda',both:'Venda e aluguel'};
+const safeColor=c=>/^#[0-9A-Fa-f]{6}$/.test(c||'')?c:'#0E359D';
+const photoUrl=path=>path&&/^[0-9a-f-]{36}\/(?:branding|properties)\/[a-zA-Z0-9._/-]+$/.test(path)
+ ?mediaBase+path.split('/').map(encodeURIComponent).join('/'):null;
+const whatsapp=(number,message)=>{
+ const n=String(number||'').replace(/\D/g,'');if(n.length<10||n.length>15)return '';
+ return 'https://wa.me/'+(n.length===11?'55'+n:n)+'?text='+encodeURIComponent(message);
+};
+const icon=(name)=>{const paths={
+ home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 21v-7h6v7"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>',
+ arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',
+ chat:'<path d="M20 11.5A8 8 0 0 1 8.4 19L3 21l2-5.1A8 8 0 1 1 20 11.5z"/><path d="M8 10h8m-8 3h5"/>',
+ pin:'<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.5"/>',
+ check:'<path d="m4 12 5 5L20 6"/>',
+ bed:'<path d="M3 20V5m18 15V9M3 17h18M5 12h14V9a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/>'
+ };return '<svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.home)+'</svg>';};
+function img(src,alt,cls=''){const n=$('img',cls);n.alt=alt;n.loading='lazy';n.referrerPolicy='no-referrer';n.src=src;return n;}
+const unavailable=()=>{root.replaceChildren();const p=$('main','empty');p.append($('h3','','Site não disponível'),$('p','','Este endereço não possui uma vitrine pública ativa no momento.'));root.append(p);document.title='Site indisponível | VILLE';};
+async function start(){
+ if(!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)){unavailable();return;}
+ let token;
+ if(preview){try{const s=JSON.parse(sessionStorage.getItem('ville_agency_session_v1')||'null');token=s?.access_token;}catch{}}
+ if(preview&&!token){root.replaceChildren($('main','empty','Faça o login no painel da imobiliária e abra a prévia por lá.'));return;}
+ const endpoint=preview?'preview_website':'public_website';
+ try{
+  const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/'+endpoint,{
+   method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+(token||config.supabasePublishableKey),'Content-Type':'application/json'},
+   body:JSON.stringify({p_slug:slug}),cache:'no-store'
+  });
+  if(!response.ok)throw Error('A vitrine não está disponível.');
+  const data=await response.json();
+  if(!data?.website){unavailable();return;}
+  render(data);
+ }catch(e){unavailable();}
+}
+function render(data){
+ const site=data.website,props=Array.isArray(data.properties)?data.properties:[];
+ document.documentElement.style.setProperty('--brand',safeColor(site.primary_color));
+ document.documentElement.style.setProperty('--accent',safeColor(site.accent_color));
+ document.title=site.name+' | Imóveis para venda e aluguel';
+ root.replaceChildren();
+ if(preview){root.append($('div','notice',site.published?'PRÉ-VISUALIZAÇÃO DO SITE — As alterações salvas aparecem aqui.':'PRÉ-VISUALIZAÇÃO — Este site ainda não está publicado.'));}
+ const header=$('header','header');const headerIn=$('div','container header-inner');
+ const logoWrap=$('a','brand');logoWrap.href='#inicio';
+ const mark=$('span','brand-mark');const logo=photoUrl(site.logo_path);
+ if(logo)mark.append(img(logo,'Logo de '+site.name));else mark.textContent=site.name.slice(0,1).toUpperCase();
+ const brandText=$('span','brand-label');brandText.append($('strong','',site.name),$('small','','IMOBILIÁRIA'));logoWrap.append(mark,brandText);
+ const nav=$('nav','header-nav');nav.setAttribute('aria-label','Navegação principal');
+ for(const [label,dest] of [['Início','#inicio'],['Imóveis','#imoveis'],['Sobre nós','#sobre']]){const a=$('a','',label);a.href=dest;nav.append(a);}
+ const contactLink=whatsapp(site.whatsapp,'Olá! Gostaria de mais informações sobre os imóveis.');
+ const call=$('a','contact-btn');call.innerHTML=icon('chat')+' Falar com corretor';call.href=contactLink||'#contato';
+ if(contactLink){call.target='_blank';call.rel='noopener noreferrer';}
+ headerIn.append(logoWrap,nav,call);header.append(headerIn);root.append(header);
+ const hero=$('section','hero');hero.id='inicio';
+ const banner=photoUrl(site.banner_path);
+ if(banner){hero.classList.add('with-banner');hero.style.backgroundImage='url("'+banner+'")';}
+ const heroIn=$('div','container hero-content');heroIn.append($('span','eyebrow','BEM-VINDO À '+site.name.toLocaleUpperCase('pt-BR')),
+ $('h1','',site.tagline||'Encontre o imóvel ideal para você.'),
+ $('p','','Uma nova forma de descobrir imóveis selecionados para o seu próximo capítulo.'));
+ hero.append(heroIn,$('div','hero-deco'));root.append(hero);
+ const form=$('form','container search-bar');const filterData=[
+  ['Busca','search','text','Bairro, cidade ou nome'],['Finalidade','purpose','select',['Todas','Comprar','Alugar']],
+  ['Tipo de imóvel','type','select',['Todos','Casa','Apartamento','Terreno','Comercial','Rural','Outro']]];
+ for(const [label,key,kind,content] of filterData){
+  const field=$('label','filter');field.append($('span','',label));
+  let control;
+  if(kind==='select'){control=$('select');for(const optionLabel of content){const opt=$('option','',optionLabel);opt.value=optionLabel;control.append(opt);}}
+  else {control=$('input');control.type='search';control.placeholder=content;control.autocomplete='off';}
+  control.name=key;control.id='filter-'+key;field.append(control);form.append(field);
+ }
+ const button=$('button','search-button','Buscar imóveis');button.type='submit';form.append(button);root.append(form);
+ const section=$('section','section');section.id='imoveis';const inside=$('div','container');
+ const heading=$('div','section-heading');const headingText=$('div');
+ headingText.append($('span','eyebrow','SEU PRÓXIMO ENDEREÇO'),$('h2','','Encontre seu novo imóvel'),$('p','','Confira as oportunidades disponíveis para você.'));
+ const badge=$('span','results-badge');heading.append(headingText,badge);
+ const cards=$('div','cards');inside.append(heading,cards);section.append(inside);root.append(section);
+ const typeTranslation={house:'Casa',apartment:'Apartamento',land:'Terreno',commercial:'Comercial',rural:'Rural',other:'Outro'};
+ const matches=()=>{
+  const query=String(form.elements.search.value||'').toLocaleLowerCase('pt-BR').trim();
+  const purpose=form.elements.purpose.value,kind=form.elements.type.value;
+  const items=props.filter(p=>{
+   if(purpose==='Comprar'&&!['sale','both'].includes(p.purpose))return false;
+   if(purpose==='Alugar'&&!['rent','both'].includes(p.purpose))return false;
+   if(kind!=='Todos'&&typeTranslation[p.type]!==kind)return false;
+   return !query||[p.title,p.city,p.neighborhood,p.description].some(x=>String(x||'').toLocaleLowerCase('pt-BR').includes(query));
+  });
+  cards.replaceChildren();badge.textContent=items.length+' '+(items.length===1?'imóvel encontrado':'imóveis encontrados');
+  if(!items.length){const empty=$('div','empty');empty.append($('div','property-noimg','⌂'),$('h3','','Nenhum imóvel encontrado'),$('p','','Experimente ajustar os filtros para encontrar outras opções.'));cards.append(empty);}
+  for(const p of items)cards.append(card(p,site));
+ };
+ form.addEventListener('submit',e=>{e.preventDefault();matches();section.scrollIntoView({behavior:'smooth'});});
+ matches();
+ const about=$('section','about');about.id='sobre';const aboutGrid=$('div','container about-grid');
+ const aboutText=$('div');aboutText.append($('span','eyebrow','QUEM SOMOS'),$('h2','','Encontre seu lugar com quem entende do mercado.'));
+ aboutText.append($('p','',site.about||'Atendimento dedicado para ajudar você a encontrar o imóvel que combina com seus planos.'));
+ const aboutGraphic=$('div','about-panel');aboutGraphic.append($('span','',site.name.slice(0,20)));
+ aboutGrid.append(aboutText,aboutGraphic);about.append(aboutGrid);root.append(about);
+ const footer=$('footer','footer');footer.id='contato';const footerMain=$('div','container');
+ const upper=$('div','footer-top');const footerName=$('div','brand-label');footerName.append($('strong','',site.name),$('small','','IMOBILIÁRIA'));
+ const address=$('div','footer-details');
+ if(site.address)address.append($('span','',site.address));
+ if(site.phone)address.append($('span','',site.phone));
+ if(site.instagram){const insta=$('a','','Instagram');insta.href=site.instagram;insta.target='_blank';insta.rel='noopener noreferrer';address.append(insta);}
+ if(contactLink){const w=$('a','','Atendimento pelo WhatsApp');w.href=contactLink;w.target='_blank';w.rel='noopener noreferrer';address.append(w);}
+ upper.append(footerName,address);
+ const bottom=$('div','footer-bottom');bottom.append($('span','','© '+new Date().getFullYear()+' '+site.name+' · Todos os direitos reservados.'),$('strong','','Tecnologia VILLE Imobiliário'));
+ footerMain.append(upper,bottom);footer.append(footerMain);root.append(footer);
+}
+function card(p,site){
+ const card=$('article','property-card'),media=$('div','property-media'),src=photoUrl(p.photos?.[0]);
+ if(src)media.append(img(src,'Imagem do imóvel '+p.title));else media.append($('span','property-noimg','⌂'));
+ media.append($('span','purpose-badge',purposes[p.purpose]||'Imóvel'));card.append(media);
+ const body=$('div','property-info');body.append($('span','location',(p.neighborhood?p.neighborhood+', ':'')+(p.city||'')),$('h3','',p.title||'Imóvel'));
+ const features=$('div','feature-line');
+ for(const [value,label] of [[p.bedrooms,'quartos'],[p.bathrooms,'banheiros'],[p.area,'m²']])if(Number(value)>0)features.append($('span','',value+' '+label));body.append(features);
+ const bottom=$('div','property-bottom'),price=$('div','price-meta'),displayPrice=p.purpose==='rent'?p.price_rent:p.price_sale;
+ price.append($('small','',p.purpose==='rent'?'Aluguel mensal':p.purpose==='both'?'Preço de venda':'Valor de venda'),$('strong','',money(displayPrice)));
+ const more=$('button','property-more','Ver detalhes');more.type='button';more.addEventListener('click',()=>details(p,site));bottom.append(price,more);body.append(bottom);card.append(body);return card;
+}
+function details(p,site){
+ const overlay=$('div','modal-backdrop'),modal=$('div','modal');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
+ const close=$('button','modal-close','×');close.type='button';close.setAttribute('aria-label','Fechar detalhes do imóvel');
+ const dismiss=()=>overlay.remove();close.addEventListener('click',dismiss);overlay.addEventListener('click',e=>{if(e.target===overlay)dismiss();});
+ const imagePanel=$('div','modal-image'),photos=(p.photos||[]).map(photoUrl).filter(Boolean);
+ const showPhoto=src=>{imagePanel.replaceChildren();if(src)imagePanel.append(img(src,'Foto de '+p.title));else imagePanel.append($('span','property-noimg','⌂'));};
+ showPhoto(photos[0]);modal.append(close,imagePanel);
+ if(photos.length>1){const thumbs=$('div','more-photos');photos.forEach((src,i)=>{const thumb=$('button',i===0?'selected':'');thumb.type='button';thumb.setAttribute('aria-label','Ver foto '+(i+1));thumb.append(img(src,'Foto '+(i+1)));thumb.addEventListener('click',()=>{showPhoto(src);thumbs.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===thumb));});thumbs.append(thumb);});modal.append(thumbs);}
+ const body=$('div','modal-body');body.append($('span','eyebrow',purposes[p.purpose]||'IMÓVEL'),$('h2','',p.title),$('p','',p.city+(p.neighborhood?', '+p.neighborhood:'')));
+ const meta=$('div','detail-meta');for(const [v,label] of [[p.bedrooms,'quartos'],[p.bathrooms,'banheiros'],[p.parking,'vagas'],[p.area,'m²']])if(Number(v)>0)meta.append($('span','',v+' '+label));
+ body.append(meta,$('p','',p.description||'Fale com nossa equipe para conhecer mais detalhes.'));
+ const bottom=$('div','modal-details-footer');bottom.append($('strong','',money(p.purpose==='rent'?p.price_rent:p.price_sale)));
+ const msg='Olá! Tenho interesse no imóvel "'+p.title+'" e gostaria de mais informações.';
+ const link=whatsapp(site.whatsapp,msg);if(link){const b=$('a','contact-btn');b.innerHTML=icon('chat')+' Falar sobre este imóvel';b.href=link;b.target='_blank';b.rel='noopener noreferrer';bottom.append(b);}
+ body.append(bottom);modal.append(body);overlay.append(modal);document.body.append(overlay);close.focus();
+}
+start();

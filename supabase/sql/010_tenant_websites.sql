@@ -170,13 +170,13 @@ revoke all on function app_private.website_payload(text,boolean) from public,ano
 grant execute on function app_private.website_payload(text,boolean) to authenticated;
 
 create or replace function public.public_website(p_slug text)
-returns jsonb language sql stable security invoker set search_path=''
+returns jsonb language sql stable security definer set search_path=''
 as $$ select app_private.website_payload(p_slug,false) $$;
 revoke all on function public.public_website(text) from public;
 grant execute on function public.public_website(text) to anon,authenticated;
 
 create or replace function public.preview_website(p_slug text)
-returns jsonb language sql stable security invoker set search_path=''
+returns jsonb language sql stable security definer set search_path=''
 as $$ select app_private.website_payload(p_slug,true) $$;
 revoke all on function public.preview_website(text) from public,anon;
 grant execute on function public.preview_website(text) to authenticated;

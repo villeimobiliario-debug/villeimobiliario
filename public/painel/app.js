@@ -1,7 +1,7 @@
 import {config} from '../config.js';
 const root=document.querySelector('#app');
 const tokenKey='ville_agency_session_v1';
-const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[]},feedback:''};
+const appState={session:null,user:null,member:null,tenant:null,subscription:null,section:'dashboard',data:{properties:[],contacts:[],leads:[],visits:[],rental_contracts:[],rent_charges:[],owner_payouts:[],finance_entries:[],property_events:[],documents:[],staff:[]},feedback:''};
 const navigation=[
  ['dashboard','Visão geral'],['properties','Imóveis'],['contacts','Clientes e proprietários'],
  ['leads','CRM de interessados'],['visits','Agenda de visitas'],['rentals','Locações e contratos'],
@@ -159,8 +159,12 @@ function showAccessDenied(text){
  const b=el('button','secondary','Sair');b.addEventListener('click',logout);card.append(b);box.append(card);root.append(box);
 }
 async function reloadData(){
- const entries=await Promise.all(['properties','contacts','leads','visits'].map(n=>list(n,'*','order=created_at.desc&limit=500')));
- ['properties','contacts','leads','visits'].forEach((n,i)=>{appState.data[n]=entries[i];});
+ const tables=['properties','contacts','leads','visits','rental_contracts','rent_charges','owner_payouts','finance_entries','property_events','documents'];
+ const entries=await Promise.all(tables.map(n=>list(n,'*','order=created_at.desc&limit=500')));
+ tables.forEach((n,i)=>{appState.data[n]=entries[i];});
+ if(['owner','manager'].includes(appState.member.role)){
+  appState.data.staff=await request('/rest/v1/rpc/agency_staff_list',{method:'POST',data:{p_tenant_id:appState.tenant.id}});
+ }else appState.data.staff=[];
 }
 async function logout(){saveSession(null);appState.tenant=null;loginScreen();}
 function renderShell(){
@@ -224,6 +228,12 @@ function dashboard(){
  const visits=appState.data.visits.filter(v=>v.status==='scheduled'&&new Date(v.scheduled_at)>=new Date()).sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at)).slice(0,6);
  right.append(rowsTable(['Data','Imóvel','Cliente'],visits,v=>[dateTime(v.scheduled_at),propertyName(v.property_id),contactName(v.contact_id)]));
  two.append(left,right);content.append(two);
+ const alerts=buildAlerts();
+ if(alerts.length){
+   const p=panel('Alertas e vencimentos','Informações calculadas automaticamente a partir dos registros.');
+   alerts.slice(0,8).forEach(item=>p.append(el('p','alert-banner',item)));
+   content.append(p);
+ }
  content.append(el('p','tip','Dashboard conectado ao Supabase. Os indicadores mostram exclusivamente dados cadastrados para esta imobiliária.'));
  return content;
 }
@@ -248,7 +258,7 @@ function listScreen(kind){
  function draw(){
   const term=search.value.trim().toLocaleLowerCase('pt-BR');
   const data=appState.data[kind].filter(r=>Object.values(r).some(v=>typeof v==='string'&&v.toLocaleLowerCase('pt-BR').includes(term)));
-  const action=r=>({actions:[['Editar',()=>openForm(kind,r)]]});
+  const action=r=>({actions:kind==='properties'?[['Editar',()=>openForm(kind,r)],['Histórico',()=>showHistory(r)]]:[['Editar',()=>openForm(kind,r)]]});
   if(kind==='properties')holder.replaceChildren(rowsTable(['Imóvel','Tipo','Finalidade','Localização','Preço','Situação','Ações'],data,r=>[
    r.title,types[r.property_type],r.purpose==='both'?'Venda e aluguel':r.purpose==='rent'?'Aluguel':'Venda',r.city,
    r.purpose==='rent'?money(r.rental_price_cents):money(r.sale_price_cents),{status:statuses[r.status],ok:r.status==='available'}, writable?action(r):'—']));
@@ -389,12 +399,345 @@ function future(section){
   el('p','', 'Esta área ainda está em desenvolvimento. Nenhum registro é criado ou alterado enquanto a funcionalidade não estiver pronta.'));
  div.append(panel);return div;
 }
+
+function showHistory(property){
+ const overlay=el('div','overlay'),dialog=el('div','dialog');
+ const head=el('header'),title=el('div');
+ title.append(el('h2','','Histórico do imóvel'),el('p','helper',property.title));
+ const close=el('button','close','×');close.type='button';close.addEventListener('click',()=>overlay.remove());
+ head.append(title,close);dialog.append(head);
+ const events=appState.data.property_events.filter(e=>e.property_id===property.id);
+ const panelHistory=el('div');
+ if(!events.length)panelHistory.append(el('p','helper','Ainda não há alterações registradas.'));
+ for(const event of events){
+  const box=el('section','history-item');
+  box.append(el('strong','',event.action==='created'?'Imóvel cadastrado':'Situação ou preço atualizado'));
+  box.append(el('small','',dateTime(event.created_at)));
+  const details=event.details||{};
+  const description=Object.entries(details).map(([k,v])=>{
+    const label={status:'Situação',before_status:'Situação anterior',after_status:'Nova situação',
+     before_sale_cents:'Venda anterior',after_sale_cents:'Nova venda',
+     before_rent_cents:'Aluguel anterior',after_rent_cents:'Novo aluguel'}[k]||k;
+    const value=k.includes('cents')?money(v):statuses[v]||v;
+    return label+': '+value;
+  }).join(' · ');
+  box.append(el('p','helper',description||'Registro de alteração'));
+  panelHistory.append(box);
+ }
+ dialog.append(panelHistory);overlay.append(dialog);
+ overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+ document.body.append(overlay);
+}
+function buildAlerts(){
+ const result=[],today=new Date(),monthMs=86400000;
+ for(const charge of appState.data.rent_charges){
+  if(charge.status==='open'&&new Date(charge.due_on+'T23:59:59')<today)
+   result.push('Aluguel vencido em '+day(charge.due_on)+': '+money(charge.amount_cents)+' — '+propertyName(appState.data.rental_contracts.find(c=>c.id===charge.contract_id)?.property_id));
+ }
+ for(const c of appState.data.rental_contracts){
+  if(c.status!=='active')continue;
+  const days=(new Date(c.end_on+'T23:59:59')-today)/monthMs;
+  if(days>=0&&days<=30)result.push('Contrato próximo do fim: '+propertyName(c.property_id)+' — '+day(c.end_on));
+ }
+ for(const visit of appState.data.visits){
+  if(visit.status!=='scheduled')continue;
+  const diff=(new Date(visit.scheduled_at)-today)/monthMs;
+  if(diff>=0&&diff<=1)result.push('Visita nas próximas 24 horas: '+propertyName(visit.property_id)+' — '+dateTime(visit.scheduled_at));
+ }
+ return result;
+}
+function futurePanel(title,description){
+ const p=panel(title,description);return p;
+}
+function dialogForm(title,fields,saveLabel,onSave,description=''){
+ const overlay=el('div','overlay'),dialog=el('div','dialog');
+ dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+ const h=el('header'),intro=el('div');
+ intro.append(el('h2','',title),el('p','helper',description));
+ const close=el('button','close','×');close.type='button';
+ const dismiss=()=>overlay.remove();
+ close.addEventListener('click',dismiss);h.append(intro,close);dialog.append(h);
+ const form=el('form'),grid=el('div','form-grid'),feedback=el('div');
+ for(const f of fields)grid.append(inputField(f,f.value??''));
+ const bottom=el('div','dialog-footer'),cancel=el('button','secondary','Cancelar'),submit=el('button','primary',saveLabel);
+ cancel.type='button';cancel.addEventListener('click',dismiss);submit.type='submit';
+ bottom.append(cancel,submit);form.append(grid,feedback,bottom);dialog.append(form);
+ overlay.append(dialog);document.body.append(overlay);
+ overlay.addEventListener('click',e=>{if(e.target===overlay)dismiss();});
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  submit.disabled=true;feedback.replaceChildren();
+  try{
+   await onSave(Object.fromEntries(new FormData(form).entries()),grid);
+   dismiss();
+   try{await reloadData();appState.feedback='Operação concluída e registrada com sucesso.';}
+   catch{appState.feedback='Operação salva. Não foi possível atualizar a lista agora.';}
+   renderSection();
+  }catch(err){feedback.replaceChildren(el('p','notice error',err.message));}
+  finally{submit.disabled=false;}
+ });
+ grid.querySelector('input,select,textarea')?.focus();
+}
+const contactOptions=filter=>[['','Selecione'],...appState.data.contacts.filter(filter||(()=>true)).map(x=>[x.id,x.full_name])];
+const propertyOptions=()=>[['','Selecione'],...appState.data.properties.map(x=>[x.id,x.title])];
+function rentalContractDialog(){
+ if(!appState.data.properties.length||appState.data.contacts.length<2){
+  appState.feedback='Cadastre primeiro um imóvel e pelo menos dois contatos (locatário e proprietário).';
+  appState.section=appState.data.properties.length?'contacts':'properties';renderSection();return;
+ }
+ dialogForm('Cadastrar contrato de locação',[
+  {key:'property_id',label:'Imóvel',kind:'select',options:propertyOptions(),required:true,wide:true},
+  {key:'tenant_contact_id',label:'Locatário',kind:'select',options:contactOptions(),required:true},
+  {key:'owner_contact_id',label:'Proprietário',kind:'select',options:contactOptions(),required:true},
+  {key:'start_on',label:'Início',kind:'date',required:true},
+  {key:'end_on',label:'Fim',kind:'date',required:true},
+  {key:'monthly_rent',label:'Aluguel mensal (R$)',required:true,placeholder:'1500,00'},
+  {key:'administration_fee_percent',label:'Administração (%)',kind:'number',value:'10',required:true},
+  {key:'due_day',label:'Dia do vencimento',kind:'number',value:'10',required:true},
+  {key:'status',label:'Situação',kind:'select',options:[['draft','Rascunho'],['active','Ativo']],wide:true},
+  {key:'notes',label:'Observações',kind:'textarea',wide:true}
+ ],'Salvar contrato',async v=>{
+  if(v.tenant_contact_id===v.owner_contact_id)throw Error('Locatário e proprietário devem ser pessoas distintas.');
+  if(v.end_on<v.start_on)throw Error('A data final não pode ser anterior ao início.');
+  const pct=Number(v.administration_fee_percent);
+  if(!Number.isFinite(pct)||pct<0||pct>100)throw Error('Taxa de administração inválida.');
+  const daynum=Number(v.due_day);
+  if(!Number.isInteger(daynum)||daynum<1||daynum>28)throw Error('Dia de vencimento entre 1 e 28.');
+  await mutate('rental_contracts',{property_id:v.property_id,tenant_contact_id:v.tenant_contact_id,
+   owner_contact_id:v.owner_contact_id,start_on:v.start_on,end_on:v.end_on,
+   monthly_rent_cents:toCents(v.monthly_rent),administration_fee_percent:pct,due_day:daynum,
+   status:v.status,notes:v.notes||null});
+ },'Ao ativar, o sistema gera até 12 mensalidades dentro do prazo do contrato.');
+}
+function activateContract(contract){
+ if(contract.status!=='draft')return;
+ if(!window.confirm('Ativar contrato e gerar mensalidades automaticamente?'))return;
+ asyncOperation(async()=>{
+  await mutate('rental_contracts',{status:'active'},contract.id);
+ },'Contrato ativado.');
+}
+function markChargePaid(charge){
+ if(charge.status!=='open')return;
+ if(!window.confirm('Confirmar recebimento de '+money(charge.amount_cents)+'? Esta ação gerará o repasse ao proprietário e não poderá ser desfeita por esta tela.'))return;
+ asyncOperation(async()=>{await mutate('rent_charges',{status:'paid',paid_on:new Date().toISOString().slice(0,10)},charge.id);},'Aluguel confirmado como recebido. Repasse calculado automaticamente.');
+}
+function markPayoutPaid(payout){
+ if(payout.status!=='pending')return;
+ if(!window.confirm('O valor de '+money(payout.net_cents)+' já foi realmente repassado ao proprietário?'))return;
+ asyncOperation(async()=>{await mutate('owner_payouts',{status:'paid',paid_on:new Date().toISOString().slice(0,10)},payout.id);},'Repasse marcado como pago.');
+}
+async function asyncOperation(fn,ok){
+ try{await fn();appState.feedback=ok;try{await reloadData();}catch{appState.feedback+=' Atualize a página para ver os dados.';}renderSection();}
+ catch(err){appState.feedback='Não foi possível concluir: '+err.message;renderSection();}
+}
+function rentalScreen(){
+ const content=el('div'),canEdit=['owner','manager'].includes(appState.member.role);
+ content.append(sectionHeading('Locações e contratos','Acompanhe contratos e recebimentos mensais.',canEdit?rentalContractDialog:null));
+ if(appState.feedback){content.append(el('div','notice',appState.feedback));appState.feedback='';}
+ const contracts=panel('Contratos registrados','Até 12 mensalidades geradas automaticamente na ativação.');
+ contracts.append(rowsTable(['Imóvel','Locatário','Proprietário','Aluguel','Vigência','Situação','Ações'],appState.data.rental_contracts,c=>[
+  propertyName(c.property_id),contactName(c.tenant_contact_id),contactName(c.owner_contact_id),money(c.monthly_rent_cents),
+  day(c.start_on)+' até '+day(c.end_on),{status:({draft:'Rascunho',active:'Ativo',ended:'Finalizado',cancelled:'Cancelado'})[c.status],ok:c.status==='active'},
+  canEdit&&c.status==='draft'?{actions:[['Ativar',()=>activateContract(c)]]}:'—'
+ ]));content.append(contracts);
+ const charges=panel('Cobranças de aluguel','Marque como recebido somente após confirmar o pagamento.');
+ charges.style.marginTop='18px';
+ charges.append(rowsTable(['Imóvel','Vencimento','Valor','Situação','Ações'],appState.data.rent_charges,c=>[
+  propertyName(appState.data.rental_contracts.find(r=>r.id===c.contract_id)?.property_id),
+  day(c.due_on),money(c.amount_cents),
+  {status:c.status==='paid'?'Recebido':c.status==='cancelled'?'Cancelado':'A receber',ok:c.status==='paid',warn:c.status==='open'&&new Date(c.due_on)<new Date()},
+  canEdit&&c.status==='open'?{actions:[['Confirmar pagamento',()=>markChargePaid(c)]]}:'—'
+ ]));content.append(charges);return content;
+}
+function financialEntryDialog(){
+ dialogForm('Novo lançamento financeiro',[
+  {key:'direction',label:'Tipo',kind:'select',options:[['expense','Despesa'],['income','Receita']]},
+  {key:'category',label:'Categoria',required:true,placeholder:'Ex.: manutenção'},
+  {key:'description',label:'Descrição',required:true,wide:true},
+  {key:'amount',label:'Valor (R$)',required:true,placeholder:'Ex.: 250,00'},
+  {key:'occurred_on',label:'Data',kind:'date',value:new Date().toISOString().slice(0,10),required:true}
+ ],'Registrar lançamento',async v=>{
+  await mutate('finance_entries',{direction:v.direction,category:v.category.trim(),
+   description:v.description.trim(),amount_cents:toCents(v.amount),occurred_on:v.occurred_on});
+ },'Lançamentos manuais não devem duplicar os aluguéis registrados no módulo de locações.');
+}
+function financeScreen(){
+ const canEdit=['owner','manager'].includes(appState.member.role);
+ const content=el('div');content.append(sectionHeading('Financeiro e repasses','Acompanhe recebimentos, lançamentos e valores dos proprietários.',canEdit?financialEntryDialog:null));
+ if(appState.feedback){content.append(el('div','notice',appState.feedback));appState.feedback='';}
+ if(!canEdit){content.append(el('div','alert-banner','Acesso financeiro exclusivo de proprietários e gestores.'));return content;}
+ const rentalReceived=appState.data.rent_charges.filter(c=>c.status==='paid').reduce((s,c)=>s+Number(c.amount_cents),0);
+ const manualIncome=appState.data.finance_entries.filter(e=>e.direction==='income').reduce((s,e)=>s+Number(e.amount_cents),0);
+ const manualExpense=appState.data.finance_entries.filter(e=>e.direction==='expense').reduce((s,e)=>s+Number(e.amount_cents),0);
+ const toReceive=appState.data.rent_charges.filter(c=>c.status==='open').reduce((s,c)=>s+Number(c.amount_cents),0);
+ const toPayout=appState.data.owner_payouts.filter(p=>p.status==='pending').reduce((s,p)=>s+Number(p.net_cents),0);
+ const cards=el('div','grid4');
+ for(const [label,value] of [['Recebimentos registrados',rentalReceived+manualIncome],['Despesas registradas',manualExpense],['Aluguéis a receber',toReceive],['Repasses pendentes',toPayout]]){
+  const c=el('div','stat');c.append(el('span','',label),el('strong','',money(value)),el('small','','Valores históricos cadastrados'));cards.append(c);
+ }
+ content.append(cards);
+ const entries=panel('Lançamentos financeiros','Receitas e despesas manuais');
+ entries.style.marginTop='17px';
+ entries.append(rowsTable(['Data','Tipo','Categoria','Descrição','Valor'],appState.data.finance_entries,r=>[
+  day(r.occurred_on),r.direction==='income'?'Receita':'Despesa',r.category,r.description,money(r.amount_cents)
+ ]));content.append(entries);
+ const payout=panel('Repasses aos proprietários','Gerados automaticamente após o recebimento de um aluguel.');payout.style.marginTop='17px';
+ payout.append(rowsTable(['Proprietário','Bruto','Administração','Líquido','Situação','Ação'],appState.data.owner_payouts,r=>[
+  contactName(r.owner_contact_id),money(r.gross_cents),money(r.administration_fee_cents),money(r.net_cents),
+  {status:r.status==='paid'?'Pago':'Pendente',ok:r.status==='paid'},
+  r.status==='pending'?{actions:[['Confirmar repasse',()=>markPayoutPaid(r)]]}:'—'
+ ]));content.append(payout);
+ content.append(el('p','tip','Este módulo registra movimentações e repasses; não faz transferências bancárias, Pix nem conciliação automática.'));
+ return content;
+}
+function staffDialog(){
+ dialogForm('Adicionar membro da equipe',[
+  {key:'email',label:'E-mail da conta já confirmada',kind:'email',required:true,wide:true},
+  {key:'role',label:'Permissão',kind:'select',options:[['agent','Corretor'],['manager','Gestor']],wide:true}
+ ],'Vincular conta',async v=>{
+  await request('/rest/v1/rpc/agency_assign_staff',{method:'POST',
+   data:{p_tenant_id:appState.tenant.id,p_email:v.email.trim().toLowerCase(),p_role:v.role}});
+ },'O profissional deve antes criar a conta no VILLE e confirmar seu e-mail.');
+}
+function removeStaff(member){
+ if(!window.confirm('Remover o acesso de '+member.email+'?'))return;
+ asyncOperation(async()=>await request('/rest/v1/rpc/agency_remove_staff',{method:'POST',
+  data:{p_tenant_id:appState.tenant.id,p_user_id:member.user_id}}),'Acesso do colaborador removido.');
+}
+function agentsScreen(){
+ const owner=appState.member.role==='owner',manager=appState.member.role==='manager';
+ const content=el('div');
+ content.append(sectionHeading('Corretores e equipe','Gerencie quem pode acessar os dados da imobiliária.',owner?staffDialog:null));
+ if(appState.feedback){content.append(el('div','notice',appState.feedback));appState.feedback='';}
+ if(!owner&&!manager){content.append(el('div','alert-banner','Somente proprietários e gestores podem consultar a equipe.'));return content;}
+ const p=panel('Profissionais vinculados','Proprietário e gestor têm acesso financeiro; corretores acessam imóveis, CRM e visitas.');
+ p.append(rowsTable(['E-mail','Função','Vinculado em','Ações'],appState.data.staff,r=>[
+  r.email,({owner:'Proprietário',manager:'Gestor',agent:'Corretor'})[r.role]||r.role,
+  day(r.created_at),owner&&r.role!=='owner'?{actions:[['Remover',()=>removeStaff(r)]]}:'—'
+ ]));content.append(p);
+ content.append(el('p','tip','Para adicionar um profissional, ele deve primeiro se cadastrar na página de acesso e confirmar o e-mail. Cada pessoa usa sua própria senha.'));
+ return content;
+}
+function documentsScreen(){
+ const content=el('div'),manager=['owner','manager'].includes(appState.member.role);
+ content.append(sectionHeading('Documentos','Arquivos privados vinculados aos imóveis e clientes.',manager?openDocumentDialog:null));
+ if(appState.feedback){content.append(el('div','notice',appState.feedback));appState.feedback='';}
+ if(!manager){content.append(el('div','alert-banner','Documentos disponíveis somente para proprietários e gestores.'));return content;}
+ const p=panel('Arquivos da imobiliária','PDF, JPG, PNG ou WEBP, até 10 MB. Acesso autenticado.');
+ p.append(rowsTable(['Documento','Imóvel','Cliente','Data','Ação'],appState.data.documents,d=>[
+  d.title,propertyName(d.property_id),contactName(d.contact_id),day(d.created_at),
+  {actions:[['Abrir',()=>openDocument(d)]]}
+ ]));content.append(p);return content;
+}
+function openDocumentDialog(){
+ const overlay=el('div','overlay'),dialog=el('div','dialog'),head=el('header'),intro=el('div');
+ intro.append(el('h2','','Adicionar documento'),el('p','helper','Arquivo privado em armazenamento protegido.'));
+ const close=el('button','close','×');close.type='button';close.addEventListener('click',()=>overlay.remove());
+ head.append(intro,close);dialog.append(head);
+ const form=el('form'),grid=el('div','form-grid');
+ grid.append(inputField({key:'title',label:'Nome do documento',required:true,wide:true},''));
+ grid.append(inputField({key:'property_id',label:'Imóvel (opcional)',kind:'select',options:[['','Nenhum'],...propertyOptions().slice(1)]},''));
+ grid.append(inputField({key:'contact_id',label:'Cliente (opcional)',kind:'select',options:[['','Nenhum'],...contactOptions().slice(1)]},''));
+ const fileLabel=el('label','field wide');fileLabel.append(el('span','','Arquivo'));
+ const file=document.createElement('input');file.type='file';file.name='file';file.required=true;file.accept='.pdf,.png,.jpg,.jpeg,.webp';
+ fileLabel.append(file);grid.append(fileLabel);
+ const feedback=el('div'),footer=el('div','dialog-footer'),cancel=el('button','secondary','Cancelar'),save=el('button','primary','Enviar documento');
+ cancel.type='button';cancel.addEventListener('click',()=>overlay.remove());save.type='submit';footer.append(cancel,save);
+ form.append(grid,feedback,footer);dialog.append(form);overlay.append(dialog);document.body.append(overlay);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();save.disabled=true;feedback.replaceChildren();
+  try{
+   const f=new FormData(form),picked=file.files?.[0];
+   if(!picked)throw Error('Selecione um arquivo.');
+   if(picked.size>10485760||picked.size<1)throw Error('Arquivo deve ter até 10 MB.');
+   const types=['application/pdf','image/jpeg','image/png','image/webp'];
+   if(!types.includes(picked.type))throw Error('Formato não permitido. Use PDF ou imagem.');
+   const path=appState.tenant.id+'/'+crypto.randomUUID()+'-'+picked.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100);
+   const url=config.supabaseUrl+'/storage/v1/object/ville-agency-docs/'+path.split('/').map(encodeURIComponent).join('/');
+   const response=await fetch(url,{method:'POST',headers:{
+    apikey:config.supabasePublishableKey,Authorization:'Bearer '+appState.session.access_token,
+    'Content-Type':picked.type,'x-upsert':'false'},body:picked});
+   if(!response.ok){const result=await response.json().catch(()=>({}));throw Error(result.message||result.error||'Não foi possível enviar o arquivo.');}
+   try{
+    await mutate('documents',{title:esc(f.get('title')).trim(),storage_path:path,mime_type:picked.type,
+     bytes:picked.size,property_id:f.get('property_id')||null,contact_id:f.get('contact_id')||null});
+   }catch(e){throw Error('Arquivo enviado, mas não foi possível registrar o documento. Informe o suporte para revisar: '+e.message);}
+   overlay.remove();appState.feedback='Documento enviado e registrado com sucesso.';
+   await reloadData();renderSection();
+  }catch(err){feedback.replaceChildren(el('div','notice error',err.message));}
+  finally{save.disabled=false;}
+ });
+}
+async function openDocument(doc){
+ const link=el('a','notice','Preparando link seguro...');
+ link.style.display='block';link.style.margin='14px 0';
+ const area=root.querySelector('#content');
+ area.prepend(link);
+ try{
+  const signed=await request('/storage/v1/object/sign/ville-agency-docs/'+doc.storage_path.split('/').map(encodeURIComponent).join('/'),
+   {method:'POST',data:{expiresIn:60}});
+  if(!signed?.signedURL)throw Error('O servidor não gerou o acesso temporário.');
+  link.href=config.supabaseUrl+'/storage/v1'+signed.signedURL;
+  link.target='_blank';link.rel='noopener noreferrer';
+  link.textContent='Abrir "'+doc.title+'" — link válido por 60 segundos';
+ }catch(err){link.className='notice error';link.textContent='Não foi possível abrir o documento: '+err.message;}
+}
+function reportsScreen(){
+ const content=el('div');content.append(sectionHeading('Relatórios','Indicadores reais da operação da imobiliária.'));
+ const manager=['owner','manager'].includes(appState.member.role);
+ const properties=appState.data.properties,leads=appState.data.leads,visits=appState.data.visits;
+ const cards=el('div','grid4');
+ const numbers=[
+  ['Imóveis disponíveis',properties.filter(x=>x.status==='available').length],
+  ['Vendas registradas',properties.filter(x=>x.status==='sold').length],
+  ['Locações registradas',properties.filter(x=>x.status==='rented').length],
+  ['Visitas realizadas',visits.filter(x=>x.status==='completed').length]
+ ];
+ for(const [title,num] of numbers){const c=el('div','stat');c.append(el('span','',title),el('strong','',num));cards.append(c);}
+ content.append(cards);
+ const p=panel('Funil de atendimento','Distribuição atual das oportunidades.');p.style.marginTop='17px';
+ const stages=[['new','Novo'],['contacted','Em contato'],['visit','Visita'],['proposal','Proposta'],['won','Concluído'],['lost','Perdido']];
+ for(const [k,title] of stages){
+  const line=el('div','summary-line');
+  line.append(el('span','',title),el('strong','',leads.filter(l=>l.stage===k).length));p.append(line);
+ }
+ content.append(p);
+ if(manager){
+  const totalIncome=appState.data.finance_entries.filter(x=>x.direction==='income').reduce((s,x)=>s+Number(x.amount_cents),0)
+   +appState.data.rent_charges.filter(x=>x.status==='paid').reduce((s,x)=>s+Number(x.amount_cents),0);
+  const totalExpenses=appState.data.finance_entries.filter(x=>x.direction==='expense').reduce((s,x)=>s+Number(x.amount_cents),0);
+  const fi=panel('Resumo financeiro','Valores históricos registrados, sem considerar tributos ou competência.');fi.style.marginTop='17px';
+  fi.append(el('p','','Receitas registradas: '+money(totalIncome)));
+  fi.append(el('p','','Despesas registradas: '+money(totalExpenses)));
+  fi.append(el('strong','','Saldo operacional simples: '+money(totalIncome-totalExpenses)));
+  content.append(fi);
+ }
+ return content;
+}
+function settingsScreen(){
+ const content=el('div');content.append(sectionHeading('Configurações','Dados básicos e acesso à conta.'));
+ const p=panel('Imobiliária','Informações cadastradas pela VILLE.');
+ for(const [k,v] of [['Nome',appState.tenant.name],['Identificador',appState.tenant.slug],
+ ['E-mail de acesso',appState.user.email],['Sua permissão',appState.member.role],
+ ['Assinatura',appState.subscription?.status||'—'],['Fim do período gratuito',day(appState.subscription?.trial_ends_at)]]){
+  const row=el('div','summary-line');row.append(el('span','',k),el('strong','',v));p.append(row);
+ }
+ content.append(p);content.append(el('p','tip','Alterações cadastrais e de faturamento são tratadas pela administração VILLE.'));
+ return content;
+}
+
 function renderSection(){
  if(!root.querySelector('#content'))return;
  root.querySelectorAll('[data-section]').forEach(x=>x.classList.toggle('active',x.dataset.section===appState.section));
  const area=root.querySelector('#content');
  area.replaceChildren(appState.section==='dashboard'?dashboard():
-  ['properties','contacts','leads','visits'].includes(appState.section)?listScreen(appState.section):future(appState.section));
+  ['properties','contacts','leads','visits'].includes(appState.section)?listScreen(appState.section):
+  appState.section==='rentals'?rentalScreen():
+  appState.section==='finance'?financeScreen():
+  appState.section==='agents'?agentsScreen():
+  appState.section==='documents'?documentsScreen():
+  appState.section==='reports'?reportsScreen():
+  appState.section==='settings'?settingsScreen():future(appState.section));
 }
 function recoverSessionFromUrl(){
  const params=new URLSearchParams(location.hash.slice(1));

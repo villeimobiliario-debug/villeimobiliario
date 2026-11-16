@@ -68,7 +68,54 @@
        <div class="two-panels"><article class="panel"><div class="panel-heading"><div><h3>Recebimentos confirmados</h3><p>Somatório das faturas pagas</p></div><span class="panel-icon">R$</span></div><strong class="financial-value" id="stat-received">—</strong><div class="panel-divider"></div><div class="panel-foot"><span>Receita recorrente prevista*</span><strong id="stat-mrr">—</strong></div><small>*Estimativa dos planos ativos, não representa dinheiro recebido.</small></article><article class="panel"><div class="panel-heading"><div><h3>Próximos vencimentos</h3><p>Assinaturas que exigem atenção</p></div><span class="panel-icon coral">◷</span></div><div id="due-list" class="due-list"><p class="muted">Carregando...</p></div></article></div>
        <section class="panel"><div class="table-top"><div><h3>Imobiliárias recentes</h3><p>Últimos cadastros da plataforma</p></div><button class="btn subtle" data-go="tenants" type="button">Ver todas →</button></div><div class="table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>CADASTRO</th><th>STATUS</th></tr></thead><tbody id="recent-tenants"><tr><td colspan="3">Carregando...</td></tr></tbody></table></div></section>
       </section>
-      <section class="page hidden" id="page-tenants"><div class="section-head"><div><h2>Imobiliárias</h2><p>Empresas cadastradas no VILLE Imobiliário.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>IDENTIFICADOR</th><th>CADASTRO</th><th>ESTADO</th></tr></thead><tbody id="all-tenants"></tbody></table></div></section>
+      <section class="page hidden" id="page-tenants">
+       <div class="section-head">
+        <div><h2>Imobiliárias</h2><p>Gerencie as imobiliárias, seus contatos e os períodos de teste.</p></div>
+        <div class="action-buttons"><button id="add-plan-btn" class="btn subtle" type="button">+ Novo plano</button><button id="add-tenant-btn" class="btn primary" type="button">+ Cadastrar imobiliária</button></div>
+       </div>
+       <div class="tenant-toolbar">
+        <label class="search-label" for="tenant-search">Buscar imobiliárias</label>
+        <input id="tenant-search" type="search" placeholder="Pesquisar pelo nome, contato ou identificador" autocomplete="off" />
+        <select id="tenant-filter" aria-label="Filtrar situação">
+         <option value="all">Todas as situações</option>
+         <option value="enabled">Ativas</option><option value="disabled">Suspensas</option>
+        </select>
+       </div>
+       <div class="panel table-container"><table>
+         <thead><tr><th>IMOBILIÁRIA</th><th>RESPONSÁVEL</th><th>CONTATO</th><th>SITUAÇÃO</th><th>CADASTRO</th><th>AÇÃO</th></tr></thead>
+         <tbody id="all-tenants"></tbody>
+       </table></div>
+       <p class="muted tenant-footnote">O cadastro administrativo inicia um teste de 7 dias. O acesso do responsável será configurado na etapa de convite de usuários.</p>
+      </section>
+      <div id="tenant-modal" class="modal-overlay hidden" role="presentation">
+       <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tenant-modal-title">
+        <div class="modal-head"><div><p class="eyebrow">VILLE IMOBILIÁRIO</p><h2 id="tenant-modal-title">Cadastrar imobiliária</h2></div><button type="button" class="modal-close" id="close-tenant-modal" aria-label="Fechar">×</button></div>
+        <form id="tenant-form">
+         <input type="hidden" id="tenant-edit-id" />
+         <div class="field-grid">
+           <div class="form-field wide"><label for="tenant-name">Nome da imobiliária</label><input id="tenant-name" required maxlength="160" placeholder="Ex.: Costa Imóveis" /></div>
+           <div class="form-field wide"><label for="tenant-slug">Identificador do site</label><input id="tenant-slug" required maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="Ex.: costa-imoveis" /><small>Usado futuramente no endereço do site; não poderá ser alterado neste módulo.</small></div>
+           <div class="form-field wide"><label for="tenant-contact-name">Nome do responsável</label><input id="tenant-contact-name" required maxlength="120" placeholder="Nome completo" /></div>
+           <div class="form-field"><label for="tenant-contact-email">E-mail do responsável</label><input type="email" id="tenant-contact-email" required maxlength="254" placeholder="contato@empresa.com.br" /></div>
+           <div class="form-field"><label for="tenant-contact-phone">WhatsApp (opcional)</label><input type="tel" id="tenant-contact-phone" maxlength="30" placeholder="(85) 99999-9999" /></div>
+           <div class="form-field wide" id="tenant-plan-field"><label for="tenant-plan">Plano da assinatura</label><select id="tenant-plan" required></select><small>A primeira cobrança não é realizada neste cadastro.</small></div>
+         </div>
+         <p class="notice hidden" id="tenant-form-notice" role="status" aria-live="polite"></p>
+         <div class="modal-actions"><button type="button" class="btn subtle" id="cancel-tenant-btn">Cancelar</button><button type="submit" id="save-tenant-btn" class="btn primary">Cadastrar e iniciar teste</button></div>
+        </form>
+       </section>
+      </div>
+      <div id="plan-modal" class="modal-overlay hidden" role="presentation">
+       <section class="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+        <div class="modal-head"><div><p class="eyebrow">CONFIGURAÇÃO COMERCIAL</p><h2 id="plan-modal-title">Criar plano</h2></div><button type="button" class="modal-close" id="close-plan-modal" aria-label="Fechar">×</button></div>
+        <form id="plan-form">
+          <div class="form-field"><label for="plan-name">Nome do plano</label><input id="plan-name" maxlength="80" required placeholder="Ex.: Plano Profissional" /></div>
+          <div class="form-field"><label for="plan-price">Mensalidade (R$)</label><input id="plan-price" type="text" inputmode="decimal" pattern="[0-9]+([,.][0-9]{1,2})?" required placeholder="Ex.: 197,00" /><small>Defina o valor antes de criar a imobiliária. Nenhuma cobrança será efetuada automaticamente.</small></div>
+          <p class="notice hidden" id="plan-form-notice" role="status" aria-live="polite"></p>
+          <div class="modal-actions"><button type="button" id="cancel-plan-btn" class="btn subtle">Cancelar</button><button id="save-plan-btn" type="submit" class="btn primary">Salvar plano</button></div>
+        </form>
+       </section>
+      </div>
       <section class="page hidden" id="page-subscriptions"><div class="section-head"><div><h2>Assinaturas</h2><p>Períodos de teste, renovações e vencimentos.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>PLANO</th><th>SITUAÇÃO</th><th>VENCIMENTO</th></tr></thead><tbody id="all-subscriptions"></tbody></table></div></section>
       <section class="page hidden" id="page-payments"><div class="section-head"><div><h2>Pagamentos</h2><p>Comprovantes e histórico de solicitações de pagamento.</p></div></div><div class="panel table-container"><table><thead><tr><th>IMOBILIÁRIA</th><th>VALOR</th><th>STATUS</th><th>ENVIADO EM</th></tr></thead><tbody id="all-payments"></tbody></table></div></section>
       <section class="page hidden" id="page-settings"><div class="section-head"><div><h2>Configurações</h2><p>Parâmetros gerais da plataforma.</p></div></div><div class="settings-grid"><article class="panel"><h3>Assinaturas</h3><div class="setting-row"><span>Período de teste gratuito</span><strong id="setting-trial">—</strong></div><div class="setting-row"><span>Tolerância após vencimento</span><strong id="setting-grace">—</strong></div><p class="tip">Alterações de regras serão disponibilizadas em uma etapa posterior, com trilha de auditoria.</p></article><article class="panel"><h3>Pagamento por Pix</h3><div class="setting-row"><span>Chave Pix configurada</span><strong id="setting-pix">—</strong></div><p class="tip">O envio de comprovantes e a confirmação manual serão implementados no próximo módulo.</p></article></div></section>

@@ -220,7 +220,7 @@ async function toggleTenant(tenant){
     await adminRpc('admin_set_tenant_state',{p_tenant_id:tenant.id,p_state:disable?'disabled':'enabled'});
     await reload();
     adminState.section='tenants';renderSection();
-  }catch(err)window.alert(formatError(err));
+  }catch(err){window.alert(formatError(err));}
 }
 function tenants(){
   const root=el('div');

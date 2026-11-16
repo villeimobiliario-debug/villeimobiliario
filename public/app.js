@@ -108,7 +108,7 @@ function dashboard() {
   two.append(recent,side);wrap.append(two);return wrap;
 }
 
-const tenantsUI = {search:'',filter:'all'};
+const tenantsUI = {search:'',filter:'all',feedback:''};
 function normalizeSlug(value) {
   return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
     .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80);
@@ -165,12 +165,26 @@ function modal(title, fields, submitLabel, onSubmit, help) {
     const values=Object.fromEntries(new FormData(form).entries());
     const save=overlay.querySelector('.ville-save'),error=overlay.querySelector('.ville-form-error');
     save.disabled=true;error.hidden=true;
-    try{await onSubmit(values);close();await reload();adminState.section='tenants';renderSection();}
-    catch(err){
+    let confirmation;
+    try{
+      confirmation=await onSubmit(values);
+    }catch(err){
       const raw=String(err?.message||'Não foi possível salvar.');
-      error.textContent=err?.code==='23505'?'Já existe uma imobiliária com este identificador.':raw;
+      error.textContent=err?.code==='23505'?'Já existe um registro com este nome ou identificador.':raw;
       error.hidden=false;
-    }finally{save.disabled=false;}
+      save.disabled=false;
+      return;
+    }
+    // A gravação já aconteceu; jamais solicitar novo envio se a atualização visual falhar.
+    close();
+    tenantsUI.feedback=confirmation||'Alteração salva com sucesso.';
+    try{
+      await loadData();
+    }catch{
+      tenantsUI.feedback+=' Não foi possível atualizar os dados agora; clique em Atualizar dados.';
+    }
+    adminState.section='tenants';
+    renderSection();
   });
   grid.querySelector('input,select')?.focus();
   return overlay;
@@ -181,6 +195,7 @@ function openPlanModal(){
     {name:'price',label:'Mensalidade (R$)',required:true,wide:true,placeholder:'Ex.: 197,00',pattern:'[0-9]+([,.][0-9]{1,2})?'}
   ],'Criar plano', async v=>{
     await adminRpc('admin_create_plan',{p_name:v.name.trim(),p_price_cents:parsePlanCents(v.price)});
+    return 'Plano "'+v.name.trim()+'" criado com sucesso!';
   },'Defina o preço do plano antes de cadastrar uma imobiliária. Nenhuma cobrança é gerada aqui.');
 }
 function openTenantModal(tenant=null){
@@ -200,11 +215,13 @@ function openTenantModal(tenant=null){
   const overlay=modal(editing?'Editar imobiliária':'Cadastrar imobiliária',fields,editing?'Salvar alterações':'Cadastrar e iniciar teste', async v=>{
     if(v.name.trim().length<2||v.contact_name.trim().length<2)throw Error('Preencha os nomes corretamente.');
     const params={p_name:v.name.trim(),p_contact_name:v.contact_name.trim(),p_contact_email:v.contact_email.trim().toLowerCase(),p_contact_phone:v.contact_phone.trim()};
-    if(editing) await adminRpc('admin_update_tenant',{p_tenant_id:tenant.id,...params});
-    else {
-      if(!v.plan_id)throw Error('Selecione um plano.');
-      await adminRpc('admin_create_tenant',{...params,p_slug:v.slug,p_plan_id:v.plan_id});
+    if(editing){
+      await adminRpc('admin_update_tenant',{p_tenant_id:tenant.id,...params});
+      return 'Imobiliária atualizada com sucesso.';
     }
+    if(!v.plan_id)throw Error('Selecione um plano.');
+    await adminRpc('admin_create_tenant',{...params,p_slug:v.slug,p_plan_id:v.plan_id});
+    return 'Imobiliária cadastrada com sucesso. Teste de 7 dias iniciado; o login do responsável será configurado posteriormente.';
   },editing?'Atualize os dados de contato. O identificador da vitrine não é editável.':'O cadastro cria a imobiliária e inicia 7 dias de teste. O acesso do responsável será configurado em outra etapa.');
   if(!editing){
     const name=overlay.querySelector('[name="name"]');
@@ -231,6 +248,33 @@ function tenants(){
   plan.addEventListener('click',openPlanModal);
   add.addEventListener('click',()=>openTenantModal());
   actions.append(plan,add);root.append(heading,actions);
+  if(tenantsUI.feedback){
+    const feedback=el('div','tenant-feedback',tenantsUI.feedback);
+    feedback.setAttribute('role','status');
+    feedback.setAttribute('aria-live','polite');
+    root.append(feedback);
+    tenantsUI.feedback='';
+  }
+  const overview=el('div','plan-overview');
+  const planHeading=el('div','plan-overview-heading');
+  planHeading.append(el('strong','','Planos cadastrados'));
+  planHeading.append(el('span','',String(adminState.plans.length)+' no total'));
+  overview.append(planHeading);
+  const planList=el('div','plan-summary-items');
+  if(!adminState.plans.length){
+    planList.append(el('span','plan-summary-empty','Nenhum plano cadastrado.'));
+  }else{
+    adminState.plans.forEach(p=>{
+      const item=el('div','plan-summary-item');
+      const name=el('span','',p.name);
+      const price=el('strong','',asMoney(p.monthly_price_cents)+'/mês');
+      item.append(name,price);
+      if(!p.active)item.append(el('small','plan-inactive','Inativo'));
+      planList.append(item);
+    });
+  }
+  overview.append(planList);
+  root.append(overview);
   const filters=el('div','tenant-filters');
   const input=el('input');input.type='search';input.placeholder='Pesquisar imobiliária, responsável ou contato';input.value=tenantsUI.search;
   input.setAttribute('aria-label','Pesquisar imobiliárias');

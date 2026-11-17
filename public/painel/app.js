@@ -939,11 +939,14 @@ function reportsScreen(){
 function websiteUrl(preview=false){
  return location.origin+'/vitrine/?imobiliaria='+encodeURIComponent(appState.tenant.slug)+(preview?'&preview=1':'');
 }
-function mediaUrl(path){
- const prefix=appState.tenant.id+'/';
- if(!path||!String(path).startsWith(prefix))return '';
- return config.supabaseUrl+'/storage/v1/object/public/ville-public-media/'+String(path).split('/').map(encodeURIComponent).join('/');
+async function loadAgencyMedia(image,path){
+ if(!path||!String(path).startsWith(appState.tenant.id+'/'))return;
+ try{
+  const response=await request('/functions/v1/website-media',{method:'POST',data:{slug:appState.tenant.slug,preview:true,paths:[path]}});
+  if(response?.urls?.[path]&&image.isConnected)image.src=response.urls[path];
+ }catch{}
 }
+function mediaUrl(){return '';}
 async function saveWebsite(patch){
  const old=appState.data.website;
  const data={...patch,updated_by:appState.user.id};
@@ -954,6 +957,15 @@ async function saveWebsite(patch){
  appState.data.website=res[0];
 }
 async function publishWebsite(published){
+ if(!published){
+  const website=appState.data.website||{},issues=[];
+  if(!website.site_name?.trim())issues.push('nome da imobiliária');
+  if(!website.logo_path)issues.push('logomarca');
+  if(!website.banner_path)issues.push('banner principal');
+  if(!website.whatsapp||!/^[0-9]{10,15}$/.test(website.whatsapp))issues.push('WhatsApp válido');
+  if(!appState.data.properties.some(p=>p.published&&p.status==='available'))issues.push('ao menos um imóvel disponível e marcado para publicação');
+  if(issues.length){appState.feedback='Antes de publicar, configure: '+issues.join(', ')+'.';renderSection();return;}
+ }
  if(!window.confirm(published?'Despublicar o site da imobiliária?':'Publicar o site da imobiliária agora?'))return;
  await asyncOperation(()=>saveWebsite({is_published:!published}),published?'Site despublicado.':'Site publicado com sucesso.');
 }
@@ -996,7 +1008,7 @@ function websiteScreen(){
  intro.append(el('span','eyebrow','SEU SITE PROFISSIONAL'),el('h2','','Seu endereço digital, sua identidade.'));
  intro.append(el('p','','Um site exclusivo para cada imobiliária, com layout premium, cores, fotos e atendimento próprios.'));
  const actions=el('div','site-buttons'),preview=el('a','primary','Visualizar meu site');
- preview.href=websiteUrl(true);preview.target='_blank';preview.rel='noopener';
+ preview.href=websiteUrl(true);preview.target='_self';
  actions.append(preview);
  if(settings.is_published){const open=el('a','secondary','Abrir site público');open.href=websiteUrl();open.target='_blank';open.rel='noopener';actions.append(open);}
  intro.append(actions);banner.append(intro);div.append(banner);
@@ -1019,8 +1031,15 @@ function websiteScreen(){
  const defaults={site_name:appState.tenant.name,tagline:'Encontre o imóvel ideal para você',primary_color:'#0E359D',accent_color:'#FF606A'};
  const g=el('div','form-grid');
  fields.forEach(f=>g.append(inputField(f,settings[f.key]??defaults[f.key]??'')));
+ const colorPreview=el('div','site-color-preview');colorPreview.textContent='Veja como as cores combinam no seu site';
+ const updateColorPreview=()=>{
+  const primary=g.querySelector('[name="primary_color"]')?.value||'#0E359D';
+  const accent=g.querySelector('[name="accent_color"]')?.value||'#FF606A';
+  colorPreview.style.background='linear-gradient(115deg,'+primary+','+accent+')';
+ };
+ g.addEventListener('input',updateColorPreview);updateColorPreview();
  const feedback=el('div'),save=el('button','primary','Salvar personalizações');save.type='submit';
- form.append(g,feedback,save);
+ form.append(g,colorPreview,feedback,save);
  form.addEventListener('submit',async e=>{
   e.preventDefault();save.disabled=true;feedback.replaceChildren();
   try{
@@ -1029,6 +1048,7 @@ function websiteScreen(){
    if(values.whatsapp&&!/^[0-9]{10,15}$/.test(values.whatsapp))throw Error('Informe um WhatsApp válido com DDD.');
    for(const field of ['site_name','tagline','about_text','public_phone','instagram_url','address_text'])values[field]=values[field].trim()||null;
    if(!values.site_name||!values.tagline)throw Error('Nome e frase principal são obrigatórios.');
+   if(values.primary_color.toLowerCase()===values.accent_color.toLowerCase())throw Error('Escolha cores diferentes para os elementos do site.');
    await saveWebsite(values);appState.feedback='Personalizações salvas com sucesso.';await reloadData();renderSection();
   }catch(err){feedback.replaceChildren(el('div','notice error',err.message));}
   finally{save.disabled=false;}
@@ -1038,7 +1058,7 @@ function websiteScreen(){
  for(const [field,name] of [['logo_path','Logomarca'],['banner_path','Banner da página inicial']]){
   const row=el('div','site-media');
   const image=el('div','site-media-preview');
-  if(settings[field]){const pic=el('img');pic.src=mediaUrl(settings[field]);pic.alt=name;image.append(pic);}
+  if(settings[field]){const pic=el('img');pic.alt=name;image.append(pic);loadAgencyMedia(pic,settings[field]);}
   else image.append(el('span','','◈'));
   const label=el('div','site-media-label');label.append(el('strong','',name),el('small','',settings[field]?'Imagem enviada':'Nenhuma imagem enviada'));
   const button=el('button','secondary','Enviar');button.type='button';button.addEventListener('click',()=>updateBrandingImage(field));
@@ -1067,7 +1087,7 @@ function propertyGallery(p){
  const images=appState.data.property_images.filter(x=>x.property_id===p.id),grid=el('div','property-photo-grid');
  for(const item of images){
   const tile=el('div','property-photo');
-  const image=el('img');image.src=mediaUrl(item.storage_path);image.alt='Foto cadastrada';tile.append(image);
+  const image=el('img');image.alt='Foto cadastrada';tile.append(image);loadAgencyMedia(image,item.storage_path);
   const remove=el('button','tiny','Excluir');remove.type='button';
   remove.addEventListener('click',async()=>{
    if(!window.confirm('Excluir esta foto?'))return;

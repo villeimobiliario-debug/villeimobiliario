@@ -42,7 +42,7 @@ async function start(){
   if(!response.ok)throw Error('A vitrine não está disponível.');
   const data=await response.json();
   if(!data?.website){unavailable();return;}
-  await loadImages(data);
+  await loadImages({website:data.website,properties:[]});
   render(data);
  }catch(e){unavailable();}
 }

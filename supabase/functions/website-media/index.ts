@@ -30,7 +30,7 @@ Deno.serve(async(req)=>{
    if(!signed.ok)continue;
    const json=await signed.json();
    const url=json.signedURL||json.signedUrl;
-   if(typeof url==='string')result[path]=new URL(url,supabaseUrl+'/storage/v1/').toString();
+   if(typeof url==='string')result[path]=url.startsWith('/object/')?supabaseUrl+'/storage/v1'+url:new URL(url,supabaseUrl+'/storage/v1/').toString();
   }
   return response({urls:result});
  }catch{return response({error:'Não foi possível carregar as imagens'},400);}

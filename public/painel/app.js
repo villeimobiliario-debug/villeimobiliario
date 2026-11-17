@@ -1039,6 +1039,82 @@ async function updateBrandingImage(field){
   await uploadImage(file,path,field==='banner_path'?'banner':'logo');await saveWebsite({[field]:path});
  },'Imagem atualizada. Visualize seu site para conferir.');
 }
+function websiteAnalyticsWidget(){
+ const wrap=el('section','website-analytics');
+ const header=el('div','website-analytics-head'),intro=el('div');
+ intro.append(el('span','eyebrow','DESEMPENHO DA VITRINE'),el('h2','','Visitas e interesse nos imóveis'),
+  el('p','site-analytics-explain','Acompanhe as visualizações e os cliques dos visitantes. Métricas aproximadas, sem contar sua prévia.'));
+ const controls=el('div','website-analytics-controls'),period=el('select','site-analytics-period');
+ period.setAttribute('aria-label','Período das estatísticas');
+ for(const [value,text] of [['today','Hoje'],['7d','Últimos 7 dias'],['30d','Últimos 30 dias']]){
+  const option=el('option','',text);option.value=value;period.append(option);
+ }
+ period.value='30d';
+ const refresh=el('button','secondary','Atualizar');refresh.type='button';
+ controls.append(period,refresh);header.append(intro,controls);wrap.append(header);
+ const content=el('div','website-analytics-content');
+ content.append(el('div','analytics-loading','Carregando indicadores...'));
+ wrap.append(content);
+ let requestIndex=0;
+ const load=async()=>{
+  const requestId=++requestIndex,chosen=period.value;
+  content.replaceChildren(el('div','analytics-loading','Atualizando indicadores...'));
+  try{
+   const summary=await request('/rest/v1/rpc/website_analytics_summary',{
+    method:'POST',data:{p_tenant_id:appState.tenant.id,p_period:chosen}
+   });
+   if(requestId!==requestIndex||!wrap.isConnected)return;
+   if(!summary||!Array.isArray(summary.properties))throw Error('Dados indisponíveis.');
+   content.replaceChildren();
+   const total=Number(summary.unique_visitors||0),visits=Number(summary.site_visits||0);
+   const views=Number(summary.property_views||0),clicks=Number(summary.whatsapp_clicks||0);
+   const cards=el('div','website-analytics-cards');
+   for(const [name,value,subtitle] of [
+    ['Visitantes estimados',total,'Sessões distintas'],
+    ['Acessos ao site',visits,'Visitas contabilizadas'],
+    ['Visualizações dos imóveis',views,'Detalhes abertos'],
+    ['Cliques no WhatsApp',clicks,'Interesse em atendimento']
+   ]){
+    const item=el('div','website-analytics-card');
+    item.append(el('span','website-analytics-label',name),
+      el('strong','website-analytics-number',new Intl.NumberFormat('pt-BR').format(value)),
+      el('small','website-analytics-footnote',subtitle));
+    cards.append(item);
+   }
+   content.append(cards);
+   const rank=el('div','website-ranking');
+   rank.append(el('h3','','Imóveis mais visualizados'));
+   const items=summary.properties.filter(p=>Number(p.views)>0||Number(p.whatsapp_clicks)>0)
+    .sort((a,b)=>Number(b.views)-Number(a.views)).slice(0,10);
+   if(!items.length){
+    rank.append(el('p','site-rank-empty','Ainda não há visualizações de imóveis neste período. Os dados começarão a aparecer quando visitantes acessarem a vitrine publicada.'));
+   }else{
+    const max=Math.max(1,...items.map(p=>Number(p.views)||0));
+    for(const [index,item] of items.entries()){
+     const line=el('div','website-rank-line'),top=el('div','website-rank-top');
+     const title=el('span','website-rank-name',(index+1)+'. '+item.title);
+     const stats=el('span','website-rank-count',Number(item.views).toLocaleString('pt-BR')+' visualizações');
+     top.append(title,stats);line.append(top);
+     const track=el('div','website-rank-track'),bar=el('div','website-rank-bar');
+     bar.style.width=(Math.max(0,Number(item.views))/max*100)+'%';track.append(bar);line.append(track);
+     if(Number(item.whatsapp_clicks)>0)line.append(el('small','website-rank-clicks',item.whatsapp_clicks+' cliques no WhatsApp'));
+     rank.append(line);
+    }
+   }
+   content.append(rank);
+   content.append(el('p','analytics-disclaimer','Visitantes estimados são identificados por sessão anônima neste navegador. Recarregamentos e cliques repetidos em intervalos curtos não aumentam a contagem.'));
+  }catch(err){
+   if(requestId!==requestIndex||!wrap.isConnected)return;
+   const error=el('div','notice error','Não foi possível carregar as estatísticas. Tente novamente.');
+   const retry=el('button','secondary','Tentar novamente');retry.type='button';retry.addEventListener('click',load);
+   content.replaceChildren(error,retry);
+  }
+ };
+ period.addEventListener('change',load);
+ refresh.addEventListener('click',load);
+ queueMicrotask(load);
+ return wrap;
+}
 function websiteScreen(){
  const div=el('div'),settings=appState.data.website||{},canEdit=['owner','manager'].includes(appState.member.role);
  div.append(sectionHeading('Meu Site','Personalize sua vitrine e escolha quais imóveis exibir.'));
@@ -1056,6 +1132,7 @@ function websiteScreen(){
  status.append(el('span','status'+(settings.is_published?' ok':''),settings.is_published?'Site publicado':'Site não publicado'));
  status.append(el('span','status',appState.data.properties.filter(x=>x.published&&x.status==='available').length+' imóveis visíveis'));
  div.append(status);
+ div.append(websiteAnalyticsWidget());
  const columns=el('div','site-columns'),left=panel('Personalização','Atualize as informações públicas do seu site.');
  const form=el('form','site-editor'),fields=[
  {key:'site_name',label:'Nome da imobiliária',required:true,wide:true,max:100},

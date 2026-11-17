@@ -982,9 +982,42 @@ async function selectImage(){
   input.click();
  });
 }
-async function uploadImage(file,path){
+async function prepareImage(file,mode='property'){
+ if(!file||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Formato de imagem não permitido.');
+ try{
+  const bitmap=await createImageBitmap(file),canvas=document.createElement('canvas');
+  let w=bitmap.width,h=bitmap.height;
+  if(w<250||h<200)throw Error('Escolha uma imagem com resolução maior.');
+  const ctx=canvas.getContext('2d',{alpha:file.type!=='image/jpeg'});
+  if(!ctx)throw Error('Não foi possível preparar a imagem.');
+  if(mode==='banner'){
+   const ratio=2.7;
+   canvas.width=1620;canvas.height=600;
+   const cropW=Math.min(w,h*ratio),cropH=cropW/ratio;
+   const sx=(w-cropW)/2,sy=(h-cropH)/2;
+   ctx.drawImage(bitmap,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);
+  }else{
+   const max=mode==='logo'?700:1600;
+   const scale=Math.min(1,max/Math.max(w,h));
+   canvas.width=Math.round(w*scale);canvas.height=Math.round(h*scale);
+   ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+  }
+  bitmap.close();
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,file.type,file.type==='image/png'?undefined:.85));
+  if(!blob)throw Error('Não foi possível processar a imagem.');
+  if(blob.size>7340032)throw Error('A imagem otimizada continua maior que 7 MB.');
+  if(mode!=='banner'&&blob.size>file.size)return file;
+  return new File([blob],file.name,{type:file.type});
+ }catch(err){
+  if(err?.message?.includes('resolução')||err?.message?.includes('7 MB'))throw err;
+  if(file.size>7340032)throw Error('Imagem excede 7 MB.');
+  return file;
+ }
+}
+async function uploadImage(file,path,mode='property'){
  if(!file||file.size<1||file.size>7340032)throw Error('Imagem precisa ter entre 1 byte e 7 MB.');
  if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Formato inválido. Use JPG, PNG ou WEBP.');
+ file=await prepareImage(file,mode);
  const url=config.supabaseUrl+'/storage/v1/object/ville-public-media/'+path.split('/').map(encodeURIComponent).join('/');
  const response=await fetch(url,{method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+appState.session.access_token,
   'Content-Type':file.type,'x-upsert':'false'},body:file});
@@ -996,7 +1029,7 @@ async function updateBrandingImage(field){
  if(!ext){appState.feedback='Formato de imagem inválido.';renderSection();return;}
  await asyncOperation(async()=>{
   const path=appState.tenant.id+'/branding/'+crypto.randomUUID()+'.'+ext;
-  await uploadImage(file,path);await saveWebsite({[field]:path});
+  await uploadImage(file,path,field==='banner_path'?'banner':'logo');await saveWebsite({[field]:path});
  },'Imagem atualizada. Visualize seu site para conferir.');
 }
 function websiteScreen(){

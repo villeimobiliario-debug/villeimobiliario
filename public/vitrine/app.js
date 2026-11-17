@@ -33,17 +33,17 @@ async function start(){
  if(preview){try{const s=JSON.parse(sessionStorage.getItem('ville_agency_session_v1')||'null');token=s?.access_token;}catch{}}
  if(preview&&!token){root.replaceChildren($('main','empty','Faça login e abra a prévia na mesma aba do painel.'));return;}
  previewToken=token||'';
- const endpoint=preview?'preview_website':'public_website';
+ const endpoint='website_header';
  try{
   const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/'+endpoint,{
    method:'POST',headers:{apikey:config.supabasePublishableKey,...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json'},
-   body:JSON.stringify({p_slug:slug}),cache:'no-store'
+   body:JSON.stringify({p_slug:slug,p_preview:preview}),cache:'no-store'
   });
   if(!response.ok)throw Error('A vitrine não está disponível.');
   const data=await response.json();
-  if(!data?.website){unavailable();return;}
-  await loadImages({website:data.website,properties:[]});
-  render(data);
+  if(!data?.slug){unavailable();return;}
+  await loadImages({website:data,properties:[]});
+  render({website:data,properties:[]});
  }catch(e){unavailable();}
 }
 async function loadImages(data){

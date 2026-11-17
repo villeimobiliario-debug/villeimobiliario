@@ -16,21 +16,29 @@ Deno.serve(async(req)=>{
   if(unique.some(p=>typeof p!=='string'||p.length>260||!/^[-a-z0-9/._]+$/i.test(p)||p.includes('..')))return response({error:'Caminho inválido'},400);
   const bearer=preview?req.headers.get('Authorization'):('Bearer '+anonKey);
   if(preview&&(!bearer||!bearer.startsWith('Bearer ')))return response({error:'É necessário entrar no painel'},401);
+  const check=await fetch(supabaseUrl+'/rest/v1/rpc/website_media_authorized',{
+    method:'POST',headers:{apikey:anonKey,Authorization:bearer,'Content-Type':'application/json'},
+    body:JSON.stringify({p_slug:slug,p_paths:unique,p_preview:preview})
+  });
+  if(!check.ok)return response({error:'Acesso à mídia não autorizado'},preview?401:404);
+  const allowed=await check.json();
+  if(!Array.isArray(allowed))return response({urls:{}});
   const result={};
-  for(const path of unique){
-   const check=await fetch(supabaseUrl+'/rest/v1/rpc/'+(preview?'website_media_preview':'website_media_public'),{
-    method:'POST',headers:{'apikey':anonKey,'Authorization':bearer,'Content-Type':'application/json'},
-    body:JSON.stringify({p_slug:slug,p_path:path})
-   });
-   if(!check.ok||await check.json()!==true)continue;
-   const signed=await fetch(supabaseUrl+'/storage/v1/object/sign/ville-public-media/'+path.split('/').map(encodeURIComponent).join('/'),{
-    method:'POST',headers:{'apikey':serviceKey,'Authorization':'Bearer '+serviceKey,'Content-Type':'application/json'},
-    body:JSON.stringify({expiresIn:120})
-   });
-   if(!signed.ok)continue;
-   const json=await signed.json();
-   const url=json.signedURL||json.signedUrl;
-   if(typeof url==='string')result[path]=url.startsWith('/object/')?supabaseUrl+'/storage/v1'+url:new URL(url,supabaseUrl+'/storage/v1/').toString();
+  for(let i=0;i<allowed.length;i+=8){
+   const pack=allowed.slice(i,i+8);
+   const signedBatch=await Promise.all(pack.map(async path=>{
+    try{
+     const signed=await fetch(supabaseUrl+'/storage/v1/object/sign/ville-public-media/'+path.split('/').map(encodeURIComponent).join('/'),{
+      method:'POST',headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey,'Content-Type':'application/json'},
+      body:JSON.stringify({expiresIn:120})
+     });
+     if(!signed.ok)return null;
+     const body=await signed.json(),url=body.signedURL||body.signedUrl;
+     if(typeof url!=='string')return null;
+     return [path,url.startsWith('/object/')?supabaseUrl+'/storage/v1'+url:new URL(url,supabaseUrl+'/storage/v1/').toString()];
+    }catch{return null;}
+   }));
+   for(const item of signedBatch)if(item)result[item[0]]=item[1];
   }
   return response({urls:result});
  }catch{return response({error:'Não foi possível carregar as imagens'},400);}

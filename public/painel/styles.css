@@ -523,3 +523,31 @@ border:1px solid #e0e8f6;border-radius:13px;margin-bottom:18px;text-shadow:0 1px
 .website-analytics .analytics-disclaimer{margin:15px 0 0;font-size:10px;color:#98a5b6;line-height:1.7}
 @media(max-width:1100px){.website-analytics-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.website-analytics{padding:18px 16px}.website-analytics-head h2{font-size:19px}.website-analytics-cards{gap:8px}.website-analytics-card{padding:13px 11px}.website-analytics-label{font-size:9px}.website-analytics-number{font-size:23px}.website-rank-top{align-items:start;flex-direction:column;gap:3px}.website-ranking{padding:15px}.website-analytics-controls{width:100%}.site-analytics-period{flex:1}}
+
+
+/* Cadastro/edição de imóveis — galeria com prévia e upload múltiplo */
+.property-upload-box{margin:6px 0 18px;padding:18px;border:1px solid #dfe7f4;border-radius:13px;background:#f9fbff;min-width:0}
+.property-upload-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
+.property-upload-heading>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.property-upload-heading strong{font-size:13px;color:#23395a;font-weight:800}
+.property-upload-heading small{font-size:10px;color:#8898ac;line-height:1.5}
+.property-upload-count{white-space:nowrap;background:#e8f0ff;color:#2e5cb3;font-size:10px;font-weight:800;padding:6px 10px;border-radius:20px}
+.property-upload-control{display:flex;align-items:center;justify-content:center;gap:10px;border:1px dashed #aebfe0;border-radius:10px;padding:19px 12px;background:#fff;color:#2457ac;cursor:pointer;position:relative;transition:background .15s,border-color .15s}
+.property-upload-control:hover{background:#f1f6ff;border-color:#346fd0}
+.property-upload-control:focus-within{outline:2px solid #5b8be4;outline-offset:2px}
+.property-upload-icon{font-size:24px;font-weight:500;line-height:1}
+.property-upload-control-main{font-size:12px;font-weight:750}
+.property-upload-control input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.property-upload-control.is-disabled{opacity:.55;cursor:not-allowed}
+.property-upload-control.is-disabled input[type=file]{cursor:not-allowed}
+.property-upload-previews{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.property-upload-previews:empty{display:none}
+.property-upload-preview{position:relative;min-width:0;aspect-ratio:1.4;background:#e8edf6;border-radius:9px;border:1px solid #dce4f1;overflow:hidden}
+.property-upload-preview img{width:100%;height:100%;object-fit:cover;display:block}
+.property-upload-remove{position:absolute;top:5px;right:5px;border:0;border-radius:999px;width:23px;height:23px;background:#fff;color:#293d5b;box-shadow:0 2px 8px #0003;font-size:18px;line-height:20px}
+.property-upload-remove:hover{background:#fce8ea;color:#b42336}
+.property-upload-index{position:absolute;bottom:5px;left:5px;padding:3px 7px;border-radius:5px;background:#122c59c7;color:#fff;font-size:9px;font-weight:800}
+.property-upload-message{font-size:11px;color:#b15c26;line-height:1.5;margin-top:8px}
+.property-upload-message:empty{display:none}
+.property-existing-hint{grid-column:1/-1;color:#8796ab;font-size:10px;line-height:1.5}
+@media(max-width:570px){.property-upload-box{padding:12px}.property-upload-previews{grid-template-columns:repeat(3,minmax(0,1fr))}.property-upload-heading{align-items:flex-start}.property-upload-heading small{font-size:9px}}

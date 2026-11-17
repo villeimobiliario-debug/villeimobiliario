@@ -14,10 +14,10 @@ Deno.serve(async(req)=>{
   if(!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)||!Array.isArray(input.paths)||input.paths.length>24)return response({error:'Entrada inválida'},400);
   const unique=[...new Set(input.paths)];
   if(unique.some(p=>typeof p!=='string'||p.length>260||!/^[-a-z0-9/._]+$/i.test(p)||p.includes('..')))return response({error:'Caminho inválido'},400);
-  const bearer=preview?req.headers.get('Authorization'):('Bearer '+anonKey);
+  const bearer=preview?req.headers.get('Authorization'):null;
   if(preview&&(!bearer||!bearer.startsWith('Bearer ')))return response({error:'É necessário entrar no painel'},401);
   const check=await fetch(supabaseUrl+'/rest/v1/rpc/website_media_authorized',{
-    method:'POST',headers:{apikey:anonKey,Authorization:bearer,'Content-Type':'application/json'},
+    method:'POST',headers:{apikey:anonKey,...(bearer?{Authorization:bearer}:{}),'Content-Type':'application/json'},
     body:JSON.stringify({p_slug:slug,p_paths:unique,p_preview:preview})
   });
   if(!check.ok)return response({error:'Acesso à mídia não autorizado'},preview?401:404);

@@ -1095,13 +1095,15 @@ function websiteScreen(){
   finally{save.disabled=false;}
  });
  left.append(form);
- const right=el('div'),media=panel('Imagens do site','Logo e banner em JPG, PNG ou WEBP (até 7 MB).');
+ const right=el('div'),media=panel('Imagens do site','Envie imagens em JPG, PNG ou WEBP.');
  for(const [field,name] of [['logo_path','Logomarca'],['banner_path','Banner da página inicial']]){
   const row=el('div','site-media');
   const image=el('div','site-media-preview');
   if(settings[field]){const pic=el('img');pic.alt=name;image.append(pic);loadAgencyMedia(pic,settings[field]);}
   else image.append(el('span','','◈'));
-  const label=el('div','site-media-label');label.append(el('strong','',name),el('small','',settings[field]?'Imagem enviada':'Nenhuma imagem enviada'));
+  const label=el('div','site-media-label');
+  const hint=field==='logo_path'?'Recomendado: 700 × 700 px · máximo 7 MB':'Recomendado: 1620 × 600 px · máximo 7 MB';
+  label.append(el('strong','',name),el('small','',settings[field]?'Imagem enviada':'Nenhuma imagem enviada'),el('span','site-media-hint',hint));
   const button=el('button','secondary','Enviar');button.type='button';button.addEventListener('click',()=>updateBrandingImage(field));
   row.append(image,label,button);media.append(row);
  }

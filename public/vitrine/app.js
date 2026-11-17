@@ -36,7 +36,7 @@ async function start(){
  const endpoint=preview?'preview_website':'public_website';
  try{
   const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/'+endpoint,{
-   method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+(token||config.supabasePublishableKey),'Content-Type':'application/json'},
+   method:'POST',headers:{apikey:config.supabasePublishableKey,...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json'},
    body:JSON.stringify({p_slug:slug}),cache:'no-store'
   });
   if(!response.ok)throw Error('A vitrine não está disponível.');
@@ -63,7 +63,7 @@ async function loadImages(data){
 async function catalogSearch({query='',purpose='',type='',offset=0,propertyId=null}={}){
  const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/website_search_properties',{
   method:'POST',headers:{'Content-Type':'application/json',apikey:config.supabasePublishableKey,
-   Authorization:'Bearer '+(preview?previewToken:config.supabasePublishableKey)},
+   ...(preview?{Authorization:'Bearer '+previewToken}:{})},
   body:JSON.stringify({p_slug:slug,p_query:query,p_purpose:purpose,p_type:type,p_offset:offset,
    p_limit:12,p_preview:preview,p_property_id:propertyId}),cache:'no-store'
  });
@@ -210,7 +210,7 @@ function inquiryForm(p,site){
   submit.disabled=true;feedback.textContent='Enviando solicitação...';
   try{
    const res=await fetch(config.supabaseUrl+'/rest/v1/rpc/website_request_contact',{
-    method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+config.supabasePublishableKey,'Content-Type':'application/json'},
+    method:'POST',headers:{apikey:config.supabasePublishableKey,'Content-Type':'application/json'},
     body:JSON.stringify({p_slug:slug,p_property_id:p.id,p_name:n,p_phone:tel,p_agree:agreeCheck.checked,p_honeypot:honeypot.value})
    });
    const result=await res.json().catch(()=>null);

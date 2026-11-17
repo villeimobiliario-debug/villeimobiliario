@@ -25,6 +25,30 @@ const icon=(name)=>{const paths={
  check:'<path d="m4 12 5 5L20 6"/>',
  bed:'<path d="M3 20V5m18 15V9M3 17h18M5 12h14V9a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/>'
  };return '<svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.home)+'</svg>';};
+// Analytics sem cookies: sessão temporária por aba. Não armazena IP, nome ou telefone.
+function visitorId(){
+ if(preview||navigator.doNotTrack==='1'||navigator.globalPrivacyControl===true)return null;
+ const storageKey='ville_site_visitor_'+slug;
+ try{
+  const previous=JSON.parse(sessionStorage.getItem(storageKey)||'null');
+  if(previous?.id&&/^[0-9a-f-]{36}$/i.test(previous.id)&&previous.expires>Date.now())return previous.id;
+  const next=crypto.randomUUID();
+  sessionStorage.setItem(storageKey,JSON.stringify({id:next,expires:Date.now()+86400000}));
+  return next;
+ }catch{return crypto.randomUUID();}
+}
+let ephemeralVisitor=null;
+function trackEvent(type,propertyId=null){
+ if(preview||document.visibilityState==='prerender')return;
+ if(!ephemeralVisitor)ephemeralVisitor=visitorId();
+ if(!ephemeralVisitor)return;
+ const payload={p_slug:slug,p_event:type,p_visitor:ephemeralVisitor,p_property_id:propertyId};
+ // O evento não interfere na navegação caso a rede ou o bloqueador o impeça.
+ fetch(config.supabaseUrl+'/rest/v1/rpc/website_track_event',{
+  method:'POST',headers:{apikey:config.supabasePublishableKey,'Content-Type':'application/json'},
+  body:JSON.stringify(payload),keepalive:true,cache:'no-store'
+ }).catch(()=>{});
+}
 function img(src,alt,cls=''){const n=$('img',cls);n.alt=alt;n.loading='lazy';n.referrerPolicy='no-referrer';n.src=src;return n;}
 const unavailable=()=>{root.replaceChildren();const p=$('main','empty');p.append($('h3','','Site não disponível'),$('p','','Este endereço não possui uma vitrine pública ativa no momento.'));root.append(p);document.title='Site indisponível | VILLE';};
 async function start(){
@@ -44,6 +68,7 @@ async function start(){
   if(!data?.slug){unavailable();return;}
   await loadImages({website:data,properties:[]});
   render({website:data,properties:[]});
+  if(!preview)trackEvent('site_visit');
  }catch(e){unavailable();}
 }
 async function loadImages(data){
@@ -89,7 +114,7 @@ function render(data){
  for(const [label,dest] of [['Início','#inicio'],['Imóveis','#imoveis'],['Sobre nós','#sobre']]){const a=$('a','',label);a.href=dest;nav.append(a);}
  const contactLink=whatsapp(site.whatsapp,'Olá! Gostaria de mais informações sobre os imóveis.');
  const call=$('a','contact-btn');call.innerHTML=icon('chat')+' Falar com corretor';call.href=contactLink||'#contato';
- if(contactLink){call.target='_blank';call.rel='noopener noreferrer';}
+ if(contactLink){call.target='_blank';call.rel='noopener noreferrer';call.addEventListener('click',()=>trackEvent('whatsapp_click'));}
  headerIn.append(logoWrap,nav,call);header.append(headerIn);root.append(header);
  const hero=$('section','hero');hero.id='inicio';
  const banner=photoUrl(site.banner_path);
@@ -176,7 +201,7 @@ function render(data){
  if(site.address)address.append($('span','',site.address));
  if(site.phone)address.append($('span','',site.phone));
  if(site.instagram){const insta=$('a','','Instagram');insta.href=site.instagram;insta.target='_blank';insta.rel='noopener noreferrer';address.append(insta);}
- if(contactLink){const w=$('a','','Atendimento pelo WhatsApp');w.href=contactLink;w.target='_blank';w.rel='noopener noreferrer';address.append(w);}
+ if(contactLink){const w=$('a','','Atendimento pelo WhatsApp');w.href=contactLink;w.target='_blank';w.rel='noopener noreferrer';w.addEventListener('click',()=>trackEvent('whatsapp_click'));address.append(w);}
  upper.append(footerName,address);
  const bottom=$('div','footer-bottom');bottom.append($('span','','© '+new Date().getFullYear()+' '+site.name+' · Todos os direitos reservados.'),$('strong','','Tecnologia VILLE Imobiliário'));
  footerMain.append(upper,bottom);footer.append(footerMain);root.append(footer);
@@ -234,7 +259,7 @@ function details(p,site){
  body.append(meta,$('p','',p.description||'Fale com nossa equipe para conhecer mais detalhes.'));
  const bottom=$('div','modal-details-footer');bottom.append($('strong','',money(p.purpose==='rent'?p.price_rent:p.price_sale)));
  const msg='Olá! Tenho interesse no imóvel "'+p.title+'" e gostaria de mais informações.';
- const link=whatsapp(site.whatsapp,msg);if(link){const b=$('a','contact-btn');b.innerHTML=icon('chat')+' Falar sobre este imóvel';b.href=link;b.target='_blank';b.rel='noopener noreferrer';bottom.append(b);}
+ const link=whatsapp(site.whatsapp,msg);if(link){const b=$('a','contact-btn');b.innerHTML=icon('chat')+' Falar sobre este imóvel';b.href=link;b.target='_blank';b.rel='noopener noreferrer';b.addEventListener('click',()=>trackEvent('whatsapp_click',p.id));bottom.append(b);}
  body.append(bottom);
  const share=$('button','property-more','Copiar link deste imóvel');share.type='button';
  share.addEventListener('click',async()=>{
@@ -243,6 +268,8 @@ function details(p,site){
   catch{share.textContent='Link: '+url.toString();}
  });
  body.append(share,inquiryForm(p,site));
- modal.append(body);overlay.append(modal);document.body.append(overlay);close.focus();
+ modal.append(body);overlay.append(modal);document.body.append(overlay);
+ if(!preview)trackEvent('property_view',p.id);
+ close.focus();
 }
 start();

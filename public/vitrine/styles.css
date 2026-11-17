@@ -19,3 +19,9 @@
 .inquiry-feedback{align-self:center;font-size:11px;color:#355e9d;font-weight:700;line-height:1.5}
 .modal-body>.property-more{display:inline-flex;margin-top:14px}
 @media(max-width:560px){.inquiry-form{grid-template-columns:1fr}.inquiry-form>.inquiry-consent{grid-column:auto}}
+
+
+/* Navegação de catálogo paginado */
+.catalog-pagination{display:flex;align-items:center;justify-content:center;gap:14px;
+margin-top:30px;font-size:12px;font-weight:750;color:#73829a;flex-wrap:wrap}
+.catalog-pagination button:disabled{opacity:.4;cursor:not-allowed}

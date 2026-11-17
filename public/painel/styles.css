@@ -480,3 +480,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .site-color-preview{display:flex;align-items:center;justify-content:center;min-height:74px;
 padding:17px;color:#fff;font-size:13px;font-weight:800;text-align:center;line-height:1.5;
 border:1px solid #e0e8f6;border-radius:13px;margin-bottom:18px;text-shadow:0 1px 3px #0008}
+
+
+/* Instruções discretas para tamanho de logomarca e banner */
+.site-media-label .site-media-hint{
+ display:block;
+ font-size:10px;
+ line-height:1.45;
+ font-weight:500;
+ color:#8b9bb0;
+ letter-spacing:0;
+ margin-top:1px;
+}

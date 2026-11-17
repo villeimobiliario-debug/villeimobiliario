@@ -488,6 +488,77 @@ function schema(kind,row){
   {key:'notes',label:'Observações',kind:'textarea',wide:true}
  ];
 }
+
+function propertyPhotoSelector(property){
+ const existing=property?appState.data.property_images.filter(x=>x.property_id===property.id).length:0;
+ const available=Math.max(0,12-existing);
+ const section=el('section','property-upload-box');
+ const heading=el('div','property-upload-heading');
+ const title=el('div');title.append(el('strong','','Fotos do imóvel'),el('small','','JPG, PNG ou WEBP · máximo 7 MB por foto · até 12 fotos'));
+ const count=el('span','property-upload-count',existing+' de 12');
+ heading.append(title,count);section.append(heading);
+ const control=el('label','property-upload-control');
+ control.append(el('span','property-upload-icon','＋'),el('span','property-upload-control-main',available?'Selecionar fotos':'Limite de 12 fotos atingido'));
+ const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';input.multiple=true;
+ input.disabled=available===0;input.setAttribute('aria-label','Selecionar fotos do imóvel');
+ control.append(input);section.append(control);
+ const previews=el('div','property-upload-previews'),message=el('div','property-upload-message');
+ message.setAttribute('role','status');section.append(previews,message);
+ let selected=[];const urls=new Map();
+ const clearUrl=file=>{const url=urls.get(file);if(url){URL.revokeObjectURL(url);urls.delete(file);}};
+ function paint(){
+  previews.replaceChildren();
+  count.textContent=(existing+selected.length)+' de 12';
+  input.disabled=selected.length>=available;
+  for(const [index,file] of selected.entries()){
+   const cell=el('div','property-upload-preview');
+   const image=el('img');image.alt='Prévia da foto '+(index+1);
+   if(!urls.has(file))urls.set(file,URL.createObjectURL(file));image.src=urls.get(file);
+   const remove=el('button','property-upload-remove','×');remove.type='button';remove.setAttribute('aria-label','Remover '+file.name);
+   remove.addEventListener('click',()=>{selected=selected.filter(x=>x!==file);clearUrl(file);message.textContent='';paint();});
+   const indexLabel=el('span','property-upload-index',existing===0&&index===0?'Capa':String(existing+index+1));
+   cell.append(image,indexLabel,remove);previews.append(cell);
+  }
+  if(!selected.length&&existing>0)previews.append(el('small','property-existing-hint',existing+' foto(s) cadastrada(s). Para excluí-las, use “Fotos” na lista de imóveis.'));
+  control.classList.toggle('is-disabled',selected.length>=available||available===0);
+ }
+ input.addEventListener('change',()=>{
+  let rejected=0;
+  for(const file of Array.from(input.files||[])){
+   if(selected.length>=available){rejected++;continue;}
+   if(!['image/jpeg','image/png','image/webp'].includes(file.type)||!file.size||file.size>7340032){rejected++;continue;}
+   if(selected.some(x=>x.name===file.name&&x.size===file.size&&x.lastModified===file.lastModified))continue;
+   selected.push(file);
+  }
+  input.value='';message.textContent=rejected?'Algumas fotos não foram adicionadas. Verifique o limite de 12 fotos e de 7 MB por arquivo.':'';
+  paint();
+ });
+ paint();
+ return {node:section,selected:()=>selected.slice(),setMessage:text=>{message.textContent=text;},
+  dispose:()=>{for(const file of selected)clearUrl(file);}};
+}
+async function uploadPropertyPhotos(savedProperty,files,existingCount=0,onProgress=()=>{}){
+ let uploaded=0;const errors=[];
+ for(const file of files){
+  onProgress('Enviando foto '+(uploaded+errors.length+1)+' de '+files.length+'...');
+  const extension={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
+  const path=appState.tenant.id+'/properties/'+savedProperty.id+'/'+crypto.randomUUID()+'.'+extension;
+  let stored=false;
+  try{
+   await uploadImage(file,path);stored=true;
+   const result=await request('/rest/v1/property_images',{method:'POST',prefer:'return=representation',
+    data:{tenant_id:appState.tenant.id,property_id:savedProperty.id,storage_path:path,
+      position:existingCount+uploaded,created_by:appState.user.id}});
+   if(!Array.isArray(result)||result.length!==1)throw Error('Foto não confirmada no banco de dados.');
+   uploaded++;
+  }catch(err){
+   errors.push(file.name+': '+(err?.message||'falha no envio'));
+   if(stored)await request('/storage/v1/object/ville-public-media/'+path.split('/').map(encodeURIComponent).join('/'),{method:'DELETE'}).catch(()=>{});
+  }
+ }
+ return {uploaded,errors};
+}
+
 function openForm(kind,row=null){
  if(kind==='properties'&&!['owner','manager'].includes(appState.member.role))return;
  if(kind==='leads'&&!appState.data.contacts.length){appState.feedback='Cadastre primeiro um cliente em Clientes e proprietários.';appState.section='contacts';renderSection();return;}
@@ -500,7 +571,10 @@ function openForm(kind,row=null){
  const h=el('header'),headline=el('div');
  headline.append(el('h2','',(row?'Editar ':'Cadastrar ')+labels[kind]),el('p','helper','Informações disponíveis somente para esta imobiliária.'));
  const close=el('button','close','×');close.setAttribute('aria-label','Fechar');close.type='button';
- const dismiss=()=>overlay.remove();close.addEventListener('click',dismiss);
+ let saving=false;
+ let photoSelector=null;
+ const dismiss=()=>{if(saving)return;photoSelector?.dispose();overlay.remove();};
+ close.addEventListener('click',dismiss);
  h.append(headline,close);dialog.append(h);
  const form=el('form'),grid=el('div','form-grid'),errors=el('div');
  const fields=schema(kind,row),defaults={property_type:'house',purpose:'sale',status:kind==='properties'?'available':'scheduled',
@@ -512,12 +586,16 @@ function openForm(kind,row=null){
   if(field.key==='scheduled_at'&&value)value=localDateTimeValue(value);
   grid.append(inputField(field,value));
  }
+ if(kind==='properties')photoSelector=propertyPhotoSelector(row);
  const footer=el('div','dialog-footer'),cancel=el('button','secondary','Cancelar'),save=el('button','primary',row?'Salvar alterações':'Cadastrar');
  cancel.type='button';cancel.addEventListener('click',dismiss);save.type='submit';
- footer.append(cancel,save);form.append(grid,errors,footer);dialog.append(form);overlay.append(dialog);
+ footer.append(cancel,save);form.append(grid);
+ if(photoSelector)form.append(photoSelector.node);
+ form.append(errors,footer);dialog.append(form);overlay.append(dialog);
  overlay.addEventListener('click',e=>{if(e.target===overlay)dismiss();});document.body.append(overlay);
  form.addEventListener('submit',async e=>{
-  e.preventDefault();save.disabled=true;errors.replaceChildren();
+  e.preventDefault();if(saving)return;
+  saving=true;save.disabled=true;cancel.disabled=true;close.disabled=true;save.textContent='Salvando...';errors.replaceChildren();
   const fd=new FormData(form),data=Object.fromEntries(fd.entries());
   try{
    if(kind==='properties'){
@@ -532,14 +610,26 @@ function openForm(kind,row=null){
    if(kind==='leads'&&!data.property_id)data.property_id=null;
    if(kind==='visits')data.scheduled_at=new Date(data.scheduled_at).toISOString();
    for(const k of Object.keys(data))if(data[k]==='')data[k]=null;
-   // O banco confirma a persistencia e valida a imobiliaria pela politica RLS.
-   await mutate(kind,data,row?.id);
-   dismiss();
+   // Primeiro confirma o imóvel no banco, depois associa as fotos ao ID persistido.
+   const saved=await mutate(kind,data,row?.id);
+   let photoReport={uploaded:0,errors:[]};
+   if(photoSelector&&photoSelector.selected().length){
+    const selected=photoSelector.selected(),existingCount=row?
+     appState.data.property_images.filter(x=>x.property_id===row.id).length:0;
+    photoReport=await uploadPropertyPhotos(saved,selected,existingCount,progress=>{
+     photoSelector.setMessage(progress);save.textContent='Enviando fotos...';
+    });
+   }
+   saving=false;dismiss();
    appState.feedback=labels[kind][0].toUpperCase()+labels[kind].slice(1)+(row?' atualizado':' cadastrado')+' com sucesso.';
+   if(photoReport.uploaded)appState.feedback+=' '+photoReport.uploaded+' foto(s) adicionada(s).';
+   if(photoReport.errors.length)appState.feedback+=' '+photoReport.errors.length+
+    ' foto(s) não foram enviadas. Abra Fotos na lista de imóveis para tentar novamente.';
    try{await reloadData();}catch{appState.feedback+=' O registro foi salvo, mas a lista não pôde ser atualizada. Clique em Atualizar.';}
    renderSection();
   }catch(err){errors.replaceChildren(el('div','notice error',err.message));}
-  finally{save.disabled=false;}
+  finally{saving=false;save.disabled=false;cancel.disabled=false;close.disabled=false;
+   save.textContent=row?'Salvar alterações':'Cadastrar';}
  });
  grid.querySelector('input,select,textarea')?.focus();
 }

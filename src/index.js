@@ -61,7 +61,7 @@ async function sitemap(url){
  return txt(xml,200,'application/xml; charset=utf-8','public,max-age=600');
 }
 async function storefrontHtml(request,env,url){
- const origin=await env.ASSETS.fetch(new URL('/vitrine/index.html',request.url));
+ const origin=await env.ASSETS.fetch(new URL('/vitrine/',request.url));
  if(!origin.ok)return origin;
  if(url.searchParams.has('preview')){
   const headers=new Headers(origin.headers);headers.set('X-Robots-Tag','noindex, nofollow');headers.set('Cache-Control','no-store');

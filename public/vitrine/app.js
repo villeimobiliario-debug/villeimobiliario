@@ -60,9 +60,21 @@ async function loadImages(data){
   }catch{}
  }
 }
+async function catalogSearch({query='',purpose='',type='',offset=0,propertyId=null}={}){
+ const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/website_search_properties',{
+  method:'POST',headers:{'Content-Type':'application/json',apikey:config.supabasePublishableKey,
+   Authorization:'Bearer '+(preview?previewToken:config.supabasePublishableKey)},
+  body:JSON.stringify({p_slug:slug,p_query:query,p_purpose:purpose,p_type:type,p_offset:offset,
+   p_limit:12,p_preview:preview,p_property_id:propertyId}),cache:'no-store'
+ });
+ if(!response.ok)throw Error('Não foi possível consultar os imóveis.');
+ const body=await response.json();
+ if(!body||!Array.isArray(body.properties))throw Error('A consulta do catálogo não está disponível.');
+ return body;
+}
 function render(data){
  const site=data.website,props=Array.isArray(data.properties)?data.properties:[];
- const previewProperty=props.find(x=>x.id===propertyDeepLink);
+
  document.documentElement.style.setProperty('--brand',safeColor(site.primary_color));
  document.documentElement.style.setProperty('--accent',safeColor(site.accent_color));
  document.title=site.name+' | Imóveis para venda e aluguel';
@@ -103,22 +115,56 @@ function render(data){
  const badge=$('span','results-badge');heading.append(headingText,badge);
  const cards=$('div','cards');inside.append(heading,cards);section.append(inside);root.append(section);
  const typeTranslation={house:'Casa',apartment:'Apartamento',land:'Terreno',commercial:'Comercial',rural:'Rural',other:'Outro'};
- const matches=()=>{
-  const query=String(form.elements.search.value||'').toLocaleLowerCase('pt-BR').trim();
-  const purpose=form.elements.purpose.value,kind=form.elements.type.value;
-  const items=props.filter(p=>{
-   if(purpose==='Comprar'&&!['sale','both'].includes(p.purpose))return false;
-   if(purpose==='Alugar'&&!['rent','both'].includes(p.purpose))return false;
-   if(kind!=='Todos'&&typeTranslation[p.type]!==kind)return false;
-   return !query||[p.title,p.city,p.neighborhood,p.description].some(x=>String(x||'').toLocaleLowerCase('pt-BR').includes(query));
-  });
-  cards.replaceChildren();badge.textContent=items.length+' '+(items.length===1?'imóvel encontrado':'imóveis encontrados');
-  if(!items.length){const empty=$('div','empty');empty.append($('div','property-noimg','⌂'),$('h3','','Nenhum imóvel encontrado'),$('p','','Experimente ajustar os filtros para encontrar outras opções.'));cards.append(empty);}
-  for(const p of items)cards.append(card(p,site));
+ const pagination=$('div','catalog-pagination');inside.append(pagination);
+ const codeMap={Casa:'house',Apartamento:'apartment',Terreno:'land',Comercial:'commercial',Rural:'rural',Outro:'other'};
+ let requestNo=0;
+ const matches=async(page=0)=>{
+  const n=++requestNo;
+  const query=form.elements.search.value.trim().slice(0,80);
+  const purpose=form.elements.purpose.value==='Comprar'?'sale':form.elements.purpose.value==='Alugar'?'rent':'';
+  const type=codeMap[form.elements.type.value]||'';
+  badge.textContent='Buscando imóveis...';
+  cards.replaceChildren($('div','empty','Carregando oportunidades...'));pagination.replaceChildren();
+  try{
+   const result=await catalogSearch({query,purpose,type,offset:page*12});
+   if(n!==requestNo)return;
+   await loadImages({website:site,properties:result.properties});
+   if(n!==requestNo)return;
+   cards.replaceChildren();
+   const count=Number(result.total||0);
+   badge.textContent=count+' '+(count===1?'imóvel encontrado':'imóveis encontrados');
+   if(!result.properties.length){
+    const empty=$('div','empty');
+    empty.append($('div','property-noimg','⌂'),$('h3','','Nenhum imóvel encontrado'),
+     $('p','','Experimente ajustar os filtros para encontrar outras opções.'));
+    cards.append(empty);
+   }
+   for(const p of result.properties)cards.append(card(p,site));
+   const totalPages=Math.ceil(count/12);
+   if(totalPages>1){
+    const prev=$('button','property-more','← Anterior'),next=$('button','property-more','Próxima →');
+    prev.type=next.type='button';prev.disabled=page===0;next.disabled=page>=totalPages-1;
+    prev.addEventListener('click',()=>{matches(page-1);section.scrollIntoView({behavior:'smooth'});});
+    next.addEventListener('click',()=>{matches(page+1);section.scrollIntoView({behavior:'smooth'});});
+    pagination.append(prev,$('span','', 'Página '+(page+1)+' de '+totalPages),next);
+   }
+  }catch(err){
+   if(n!==requestNo)return;
+   cards.replaceChildren($('div','empty','Não foi possível buscar imóveis agora. Tente novamente.'));
+   badge.textContent='Busca indisponível';
+  }
  };
- form.addEventListener('submit',e=>{e.preventDefault();matches();section.scrollIntoView({behavior:'smooth'});});
- matches();
- if(previewProperty)queueMicrotask(()=>details(previewProperty,site));
+ form.addEventListener('submit',e=>{e.preventDefault();matches(0);section.scrollIntoView({behavior:'smooth'});});
+ matches(0);
+ if(propertyDeepLink&&/^[0-9a-f-]{36}$/i.test(propertyDeepLink)){
+  queueMicrotask(async()=>{
+   try{
+    const result=await catalogSearch({propertyId:propertyDeepLink});
+    const property=result.properties[0];
+    if(property){await loadImages({website:site,properties:[property]});details(property,site);}
+   }catch{}
+  });
+ }
  const about=$('section','about');about.id='sobre';const aboutGrid=$('div','container about-grid');
  const aboutText=$('div');aboutText.append($('span','eyebrow','QUEM SOMOS'),$('h2','','Encontre seu lugar com quem entende do mercado.'));
  aboutText.append($('p','',site.about||'Atendimento dedicado para ajudar você a encontrar o imóvel que combina com seus planos.'));

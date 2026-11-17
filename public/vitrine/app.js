@@ -3,17 +3,18 @@ const root=document.getElementById('site');
 const params=new URLSearchParams(location.search);
 const slug=(params.get('imobiliaria')||'').trim().toLowerCase();
 const preview=params.get('preview')==='1';
-const mediaBase=config.supabaseUrl+'/storage/v1/object/public/ville-public-media/';
+const mediaUrls=Object.create(null);
+const propertyDeepLink=new URLSearchParams(location.search).get('imovel');
+let previewToken='';
 const $=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=String(text??'');return n;};
 const money=c=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(Number(c||0)/100);
 const types={house:'Casa',apartment:'Apartamento',land:'Terreno',commercial:'Imóvel comercial',rural:'Imóvel rural',other:'Imóvel'};
 const purposes={rent:'Aluguel',sale:'Venda',both:'Venda e aluguel'};
 const safeColor=c=>/^#[0-9A-Fa-f]{6}$/.test(c||'')?c:'#0E359D';
-const photoUrl=path=>path&&/^[0-9a-f-]{36}\/(?:branding|properties)\/[a-zA-Z0-9._/-]+$/.test(path)
- ?mediaBase+path.split('/').map(encodeURIComponent).join('/'):null;
+const photoUrl=path=>path&&mediaUrls[path]||null;
 const whatsapp=(number,message)=>{
  const n=String(number||'').replace(/\D/g,'');if(n.length<10||n.length>15)return '';
- return 'https://wa.me/'+(n.length===11?'55'+n:n)+'?text='+encodeURIComponent(message);
+ return 'https://wa.me/'+((n.length===10||n.length===11)?'55'+n:n)+'?text='+encodeURIComponent(message);
 };
 const icon=(name)=>{const paths={
  home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 21v-7h6v7"/>',
@@ -30,7 +31,8 @@ async function start(){
  if(!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)){unavailable();return;}
  let token;
  if(preview){try{const s=JSON.parse(sessionStorage.getItem('ville_agency_session_v1')||'null');token=s?.access_token;}catch{}}
- if(preview&&!token){root.replaceChildren($('main','empty','Faça o login no painel da imobiliária e abra a prévia por lá.'));return;}
+ if(preview&&!token){root.replaceChildren($('main','empty','Faça login e abra a prévia na mesma aba do painel.'));return;}
+ previewToken=token||'';
  const endpoint=preview?'preview_website':'public_website';
  try{
   const response=await fetch(config.supabaseUrl+'/rest/v1/rpc/'+endpoint,{
@@ -40,11 +42,27 @@ async function start(){
   if(!response.ok)throw Error('A vitrine não está disponível.');
   const data=await response.json();
   if(!data?.website){unavailable();return;}
+  await loadImages(data);
   render(data);
  }catch(e){unavailable();}
 }
+async function loadImages(data){
+ const w=data.website||{},paths=[w.logo_path,w.banner_path,...(Array.isArray(data.properties)?data.properties:[]).flatMap(p=>p.photos||[])].filter(Boolean);
+ const unique=[...new Set(paths)];if(!unique.length)return;
+ for(let i=0;i<unique.length;i+=20){
+  try{
+   const response=await fetch(config.supabaseUrl+'/functions/v1/website-media',{
+    method:'POST',headers:{'Content-Type':'application/json',apikey:config.supabasePublishableKey,
+      ...(preview?{Authorization:'Bearer '+previewToken}:{})},
+    body:JSON.stringify({slug,preview,paths:unique.slice(i,i+20)}),cache:'no-store'
+   });
+   if(response.ok)Object.assign(mediaUrls,(await response.json()).urls||{});
+  }catch{}
+ }
+}
 function render(data){
  const site=data.website,props=Array.isArray(data.properties)?data.properties:[];
+ const previewProperty=props.find(x=>x.id===propertyDeepLink);
  document.documentElement.style.setProperty('--brand',safeColor(site.primary_color));
  document.documentElement.style.setProperty('--accent',safeColor(site.accent_color));
  document.title=site.name+' | Imóveis para venda e aluguel';
@@ -100,6 +118,7 @@ function render(data){
  };
  form.addEventListener('submit',e=>{e.preventDefault();matches();section.scrollIntoView({behavior:'smooth'});});
  matches();
+ if(previewProperty)queueMicrotask(()=>details(previewProperty,site));
  const about=$('section','about');about.id='sobre';const aboutGrid=$('div','container about-grid');
  const aboutText=$('div');aboutText.append($('span','eyebrow','QUEM SOMOS'),$('h2','','Encontre seu lugar com quem entende do mercado.'));
  aboutText.append($('p','',site.about||'Atendimento dedicado para ajudar você a encontrar o imóvel que combina com seus planos.'));
@@ -127,6 +146,35 @@ function card(p,site){
  price.append($('small','',p.purpose==='rent'?'Aluguel mensal':p.purpose==='both'?'Preço de venda':'Valor de venda'),$('strong','',money(displayPrice)));
  const more=$('button','property-more','Ver detalhes');more.type='button';more.addEventListener('click',()=>details(p,site));bottom.append(price,more);body.append(bottom);card.append(body);return card;
 }
+function inquiryForm(p,site){
+ const section=$('section','inquiry-section');
+ section.append($('h3','','Quero receber mais informações'),$('p','','Deixe seu contato para a imobiliária falar com você sobre este imóvel.'));
+ const form=$('form','inquiry-form');
+ const name=$('input');name.type='text';name.name='full_name';name.placeholder='Seu nome completo';name.required=true;name.maxLength=100;name.autocomplete='name';
+ const phone=$('input');phone.type='tel';phone.name='phone';phone.placeholder='Seu WhatsApp com DDD';phone.required=true;phone.maxLength=20;phone.autocomplete='tel';
+ const agree=$('label','inquiry-consent'),agreeCheck=$('input');agreeCheck.type='checkbox';agreeCheck.required=true;agree.append(agreeCheck,$('span','','Autorizo esta imobiliária a entrar em contato comigo sobre este imóvel.'));
+ const honeypot=$('input');honeypot.name='website';honeypot.autocomplete='off';honeypot.tabIndex=-1;honeypot.setAttribute('aria-hidden','true');honeypot.className='inquiry-trap';
+ const submit=$('button','contact-btn','Solicitar contato');submit.type='submit';
+ const feedback=$('div','inquiry-feedback');feedback.setAttribute('role','status');
+ form.append(name,phone,agree,honeypot,submit,feedback);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const n=name.value.trim(),tel=phone.value.replace(/\D/g,'');
+  if(n.length<2||tel.length<10||tel.length>13){feedback.textContent='Preencha nome e telefone com DDD válidos.';return;}
+  submit.disabled=true;feedback.textContent='Enviando solicitação...';
+  try{
+   const res=await fetch(config.supabaseUrl+'/rest/v1/rpc/website_request_contact',{
+    method:'POST',headers:{apikey:config.supabasePublishableKey,Authorization:'Bearer '+config.supabasePublishableKey,'Content-Type':'application/json'},
+    body:JSON.stringify({p_slug:slug,p_property_id:p.id,p_name:n,p_phone:tel,p_agree:agreeCheck.checked,p_honeypot:honeypot.value})
+   });
+   const result=await res.json().catch(()=>null);
+   if(!res.ok||result!==true)throw Error('Não foi possível registrar o interesse neste momento.');
+   feedback.textContent='Recebemos seu interesse! A imobiliária poderá entrar em contato com você.';
+   form.reset();submit.textContent='Solicitação enviada';submit.disabled=true;
+  }catch(err){feedback.textContent=err.message;submit.disabled=false;}
+ });
+ section.append(form);return section;
+}
 function details(p,site){
  const overlay=$('div','modal-backdrop'),modal=$('div','modal');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');
  const close=$('button','modal-close','×');close.type='button';close.setAttribute('aria-label','Fechar detalhes do imóvel');
@@ -141,6 +189,14 @@ function details(p,site){
  const bottom=$('div','modal-details-footer');bottom.append($('strong','',money(p.purpose==='rent'?p.price_rent:p.price_sale)));
  const msg='Olá! Tenho interesse no imóvel "'+p.title+'" e gostaria de mais informações.';
  const link=whatsapp(site.whatsapp,msg);if(link){const b=$('a','contact-btn');b.innerHTML=icon('chat')+' Falar sobre este imóvel';b.href=link;b.target='_blank';b.rel='noopener noreferrer';bottom.append(b);}
- body.append(bottom);modal.append(body);overlay.append(modal);document.body.append(overlay);close.focus();
+ body.append(bottom);
+ const share=$('button','property-more','Copiar link deste imóvel');share.type='button';
+ share.addEventListener('click',async()=>{
+  const url=new URL(location.href);url.searchParams.set('imovel',p.id);
+  try{await navigator.clipboard.writeText(url.toString());share.textContent='Link copiado!';}
+  catch{share.textContent='Link: '+url.toString();}
+ });
+ body.append(share,inquiryForm(p,site));
+ modal.append(body);overlay.append(modal);document.body.append(overlay);close.focus();
 }
 start();
